@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Space Grotesk", sans-serif;
+}
+
+@layer base {
+  body {
+    @apply h-full m-0 p-0 text-slate-900 bg-slate-50;
+    font-family: var(--font-sans);
+  }
+}
+
+@layer components {
+  .font-heading {
+    font-family: var(--font-heading);
+  }
+
+  .glass-card {
+    @apply bg-white/85 backdrop-blur-xl border border-white/30;
+  }
+
+  .gradient-bg {
+    background: linear-gradient(135deg, #0f172a 0%, #1e40af 50%, #1e1b4b 100%);
+  }
+}
+
+@keyframes scroll-left {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  animation: scroll-left 25s linear infinite;
+}
+
+.animate-marquee-reverse {
+  animation: scroll-left 25s linear infinite reverse;
+}
