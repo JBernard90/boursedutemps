@@ -9,7 +9,7 @@ dotenv.config();
 
 const startTime = Date.now();
 
-// ─── DATABASE (inline) ────────────────────────────────────────────────────
+// ─── DATABASE ─────────────────────────────────────────────────────────────
 const pool = process.env.DATABASE_URL
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
@@ -20,7 +20,7 @@ const pool = process.env.DATABASE_URL
     })
   : null;
 
-const query = async (text: string, params?: any[]) => {
+const query = async (text, params) => {
   if (!pool) throw new Error('DATABASE_URL manquant dans les variables Vercel.');
   return pool.query(text, params);
 };
@@ -166,23 +166,21 @@ const initDB = async () => {
   }
 };
 
-// Init DB non-bloquant
-initDB().catch(err => console.error('[DB] Init failed:', err?.message));
+initDB().catch(err => console.error('[DB] Init failed:', err && err.message));
 
-// ─── AUTH MIDDLEWARE (inline) ─────────────────────────────────────────────
-interface AuthRequest extends Request { user?: any; }
-
-const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const token = req.headers['authorization']?.split(' ')[1];
+// ─── AUTH MIDDLEWARE ──────────────────────────────────────────────────────
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Token manquant', success: false });
-  jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret', (err: any, user: any) => {
+  jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret', (err, user) => {
     if (err) return res.status(403).json({ error: 'Token invalide', success: false });
     req.user = user;
     next();
   });
 };
 
-// ─── OTP ──────────────────────────────────────────────────────────────────
+// ─── OTP ─────────────────────────────────────────────────────────────────
 const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 // ─── NODEMAILER ───────────────────────────────────────────────────────────
@@ -191,8 +189,8 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
 });
 
-// ─── SMS TEXTBEE ──────────────────────────────────────────────────────────
-const sendSMS = async (to: string, message: string) => {
+// ─── SMS ──────────────────────────────────────────────────────────────────
+const sendSMS = async (to, message) => {
   if (!process.env.TEXTBEE_API_KEY || !process.env.TEXTBEE_SENDER_ID) return false;
   try {
     const res = await fetch('https://api.textbee.dev/api/v1/gateway/devices/send-sms', {
@@ -201,28 +199,30 @@ const sendSMS = async (to: string, message: string) => {
       body: JSON.stringify({ receiver: to, message, deviceId: process.env.TEXTBEE_SENDER_ID }),
     });
     return res.ok;
-  } catch { return false; }
+  } catch (e) { return false; }
 };
 
-// ─── EXPRESS ──────────────────────────────────────────────────────────────
+// ─── EXPRESS ─────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
-const sendError = (res: Response, message: string, status = 500, code?: string) =>
-  res.status(status).json({ error: message, success: false, ...(code ? { code } : {}) });
+const sendError = (res, message, status, code) => {
+  status = status || 500;
+  return res.status(status).json({ error: message, success: false, code: code || 'ERROR' });
+};
 
 // ─── HEALTH ───────────────────────────────────────────────────────────────
-app.get('/api/health', async (_req: Request, res: Response) => {
+app.get('/api/health', async (req, res) => {
   try {
     await query('SELECT 1');
     res.json({ status: 'ok', database: 'connected', uptime: Date.now() - startTime });
-  } catch (err: any) {
+  } catch (err) {
     res.status(503).json({ status: 'error', database: 'disconnected', error: err.message, success: false });
   }
 });
 
 // ─── VERIFY INIT ──────────────────────────────────────────────────────────
-app.post('/api/verify/init', async (req: Request, res: Response) => {
+app.post('/api/verify/init', async (req, res) => {
   const { email, phone } = req.body;
   if (!email || !email.endsWith('@etu-usenghor.org'))
     return sendError(res, 'Email invalide ou domaine non autorisé.', 400);
@@ -234,61 +234,55 @@ app.post('/api/verify/init', async (req: Request, res: Response) => {
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
   try {
-    await query('DELETE FROM otps WHERE identifier = $1 OR identifier = $2', [`email:${email}`, `phone:${phone}`]);
-    await query('INSERT INTO otps (identifier, code, expires_at) VALUES ($1, $2, $3)', [`email:${email}`, emailOtp, expiresAt]);
-    await query('INSERT INTO otps (identifier, code, expires_at) VALUES ($1, $2, $3)', [`phone:${phone}`, phoneOtp, expiresAt]);
+    await query('DELETE FROM otps WHERE identifier = $1 OR identifier = $2', ['email:' + email, 'phone:' + phone]);
+    await query('INSERT INTO otps (identifier, code, expires_at) VALUES ($1, $2, $3)', ['email:' + email, emailOtp, expiresAt]);
+    await query('INSERT INTO otps (identifier, code, expires_at) VALUES ($1, $2, $3)', ['phone:' + phone, phoneOtp, expiresAt]);
 
     transporter.sendMail({
-      from: `"Bourse du Temps" <${process.env.EMAIL_USER}>`,
+      from: '"Bourse du Temps" <' + process.env.EMAIL_USER + '>',
       to: email,
       subject: 'Code de sécurité – Inscription Bourse du Temps',
-      html: `<div style="font-family:sans-serif;padding:20px;max-width:500px;margin:0 auto;border:1px solid #eee;border-radius:10px;">
-        <h2 style="color:#1e40af;">Vérification de votre email</h2>
-        <p>Votre code d'inscription (valable 10 minutes) :</p>
-        <div style="background:#f3f4f6;padding:15px;text-align:center;border-radius:8px;margin:20px 0;">
-          <strong style="font-size:32px;letter-spacing:4px;color:#1f2937;">${emailOtp}</strong>
-        </div>
-        <p style="font-size:12px;color:#6b7280;">Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
-      </div>`,
-    }).catch((e: any) => console.log(`[DEV] Email OTP ${email}: ${emailOtp} (erreur: ${e.message})`));
+      html: '<div style="font-family:sans-serif;padding:20px;max-width:500px;margin:0 auto;border:1px solid #eee;border-radius:10px;"><h2 style="color:#1e40af;">Vérification de votre email</h2><p>Votre code d\'inscription (valable 10 minutes) :</p><div style="background:#f3f4f6;padding:15px;text-align:center;border-radius:8px;margin:20px 0;"><strong style="font-size:32px;letter-spacing:4px;color:#1f2937;">' + emailOtp + '</strong></div><p style="font-size:12px;color:#6b7280;">Si vous n\'êtes pas à l\'origine de cette demande, ignorez cet email.</p></div>',
+    }).catch(function(e) { console.log('[DEV] Email OTP ' + email + ': ' + emailOtp + ' (erreur: ' + e.message + ')'); });
 
-    sendSMS(phone, `Bourse du Temps: code ${phoneOtp}. Valable 10 min.`)
-      .then(ok => { if (!ok) console.log(`[DEV] SMS OTP ${phone}: ${phoneOtp}`); });
+    sendSMS(phone, 'Bourse du Temps: code ' + phoneOtp + '. Valable 10 min.')
+      .then(function(ok) { if (!ok) console.log('[DEV] SMS OTP ' + phone + ': ' + phoneOtp); });
 
     res.json({ success: true, message: 'Codes envoyés. Vérifiez votre email et SMS.' });
-  } catch (err: any) {
+  } catch (err) {
     console.error('[verify/init]', err);
     sendError(res, 'Erreur génération des codes.');
   }
 });
 
 // ─── VERIFY CHECK ─────────────────────────────────────────────────────────
-app.post('/api/verify/check', async (req: Request, res: Response) => {
+app.post('/api/verify/check', async (req, res) => {
   const { email, phone, emailCode, phoneCode } = req.body;
   if (!email || !phone || !emailCode || !phoneCode)
     return sendError(res, 'Tous les champs sont requis.', 400);
   try {
-    const er = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`email:${email}`]);
-    const pr = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`phone:${phone}`]);
+    const er = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['email:' + email]);
+    const pr = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['phone:' + phone]);
     const se = er.rows[0], sp = pr.rows[0];
     if (!se || se.code !== emailCode || new Date() > new Date(se.expires_at))
       return sendError(res, 'Code email invalide ou expiré.', 400);
     if (!sp || sp.code !== phoneCode || new Date() > new Date(sp.expires_at))
       return sendError(res, 'Code SMS invalide ou expiré.', 400);
     res.json({ success: true });
-  } catch (err: any) {
+  } catch (err) {
+    console.error('[verify/check]', err);
     sendError(res, 'Erreur vérification codes.');
   }
 });
 
 // ─── REGISTER ─────────────────────────────────────────────────────────────
-app.post('/api/register', async (req: Request, res: Response) => {
+app.post('/api/register', async (req, res) => {
   const { email, phone, emailCode, phoneCode, password, firstName, lastName, campus, department, gender, country, offeredSkills, requestedSkills, availability, languages, avatar } = req.body;
   if (!email || !phone || !emailCode || !phoneCode || !password || !firstName || !lastName)
     return sendError(res, 'Champs obligatoires manquants.', 400);
   try {
-    const er = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`email:${email}`]);
-    const pr = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`phone:${phone}`]);
+    const er = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['email:' + email]);
+    const pr = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['phone:' + phone]);
     const se = er.rows[0], sp = pr.rows[0];
     if (!se || se.code !== emailCode || new Date() > new Date(se.expires_at))
       return sendError(res, 'Code email invalide ou expiré.', 403);
@@ -302,16 +296,15 @@ app.post('/api/register', async (req: Request, res: Response) => {
     const uid = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
     await query(
-      `INSERT INTO users (uid,email,password,first_name,last_name,whatsapp,campus,department,gender,country,offered_skills,requested_skills,availability,languages,avatar,verified,is_verified_email,is_verified_sms)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,true,true,true)`,
+      'INSERT INTO users (uid,email,password,first_name,last_name,whatsapp,campus,department,gender,country,offered_skills,requested_skills,availability,languages,avatar,verified,is_verified_email,is_verified_sms) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,true,true,true)',
       [uid, email, hashedPassword, firstName, lastName, phone, campus||null, department||null, gender||null, country||null,
        JSON.stringify(offeredSkills||[]), JSON.stringify(requestedSkills||[]), availability||null, JSON.stringify(languages||[]), avatar||null]
     );
-    await query('DELETE FROM otps WHERE identifier = $1 OR identifier = $2', [`email:${email}`, `phone:${phone}`]);
+    await query('DELETE FROM otps WHERE identifier = $1 OR identifier = $2', ['email:' + email, 'phone:' + phone]);
 
     const token = jwt.sign({ uid, email }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
     res.status(201).json({ success: true, uid, token });
-  } catch (err: any) {
+  } catch (err) {
     console.error('[register]', err);
     if (err.code === '23505') return sendError(res, 'Cet email est déjà utilisé.', 409);
     sendError(res, 'Erreur inscription. Veuillez réessayer.');
@@ -319,7 +312,7 @@ app.post('/api/register', async (req: Request, res: Response) => {
 });
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────
-app.post('/api/login', async (req: Request, res: Response) => {
+app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return sendError(res, 'Email et mot de passe requis.', 400);
   try {
@@ -331,111 +324,115 @@ app.post('/api/login', async (req: Request, res: Response) => {
     const token = jwt.sign({ uid: user.uid, email: user.email }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
     const { password: _, ...u } = user;
     res.json({ success: true, token, user: u });
-  } catch (err: any) {
+  } catch (err) {
+    console.error('[login]', err);
     sendError(res, 'Erreur de connexion. Veuillez réessayer.');
   }
 });
 
 // ─── AUTH/ME ──────────────────────────────────────────────────────────────
-app.get('/api/auth/me', authenticateToken, async (req: AuthRequest, res: Response) => {
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     const result = await query('SELECT * FROM users WHERE uid = $1', [req.user.uid]);
     if (!result.rows.length) return sendError(res, 'Utilisateur non trouvé.', 404);
     const { password, ...u } = result.rows[0];
-    res.json({ ...u, success: true });
-  } catch (err: any) { sendError(res, err.message); }
+    res.json(Object.assign({}, u, { success: true }));
+  } catch (err) { sendError(res, err.message); }
 });
 
 // ─── CRUD GÉNÉRIQUE ───────────────────────────────────────────────────────
 const tables = ['users','services','requests','blogs','testimonials','forumTopics','connections','transactions'];
 
-const toCamel = (obj: any): any => {
+const toCamel = function(obj) {
   if (Array.isArray(obj)) return obj.map(toCamel);
   if (obj && obj.constructor === Object)
-    return Object.keys(obj).reduce((r, k) => {
-      r[k.replace(/_([a-z])/g, g => g[1].toUpperCase())] = toCamel(obj[k]);
+    return Object.keys(obj).reduce(function(r, k) {
+      r[k.replace(/_([a-z])/g, function(g) { return g[1].toUpperCase(); })] = toCamel(obj[k]);
       return r;
-    }, {} as any);
+    }, {});
   return obj;
 };
 
-const toSnake = (k: string) => k.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`);
-const serialize = (v: any) => (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v;
+const toSnake = function(k) { return k.replace(/[A-Z]/g, function(l) { return '_' + l.toLowerCase(); }); };
+const serialize = function(v) { return (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v; };
 
-tables.forEach(table => {
+tables.forEach(function(table) {
   const db = table === 'forumTopics' ? 'forum_topics' : table;
   const idCol = table === 'users' ? 'uid' : 'id';
 
-  app.get(`/api/${table}`, async (_req: Request, res: Response) => {
-    try { res.json(toCamel((await query(`SELECT * FROM ${db} ORDER BY created_at DESC`)).rows)); }
-    catch (e: any) { sendError(res, e.message); }
+  app.get('/api/' + table, async function(req, res) {
+    try { res.json(toCamel((await query('SELECT * FROM ' + db + ' ORDER BY created_at DESC')).rows)); }
+    catch (e) { sendError(res, e.message); }
   });
 
-  app.get(`/api/${table}/:id`, async (req: Request, res: Response) => {
+  app.get('/api/' + table + '/:id', async function(req, res) {
     try {
-      const r = await query(`SELECT * FROM ${db} WHERE ${idCol} = $1`, [req.params.id]);
+      const r = await query('SELECT * FROM ' + db + ' WHERE ' + idCol + ' = $1', [req.params.id]);
       if (!r.rows.length) return sendError(res, 'Introuvable', 404);
       res.json(toCamel(r.rows[0]));
-    } catch (e: any) { sendError(res, e.message); }
+    } catch (e) { sendError(res, e.message); }
   });
 
-  app.post(`/api/${table}`, authenticateToken, async (req: AuthRequest, res: Response) => {
+  app.post('/api/' + table, authenticateToken, async function(req, res) {
     try {
-      const body = { ...req.body }; delete body.id; delete body.uid;
+      const body = Object.assign({}, req.body);
+      delete body.id; delete body.uid;
       const keys = Object.keys(body);
       if (!keys.length) return sendError(res, 'Corps vide', 400);
       const cols = keys.map(toSnake).join(', ');
       const vals = Object.values(body).map(serialize);
-      const ph = keys.map((_, i) => `$${i+1}`).join(', ');
-      const r = await query(`INSERT INTO ${db} (${cols}) VALUES (${ph}) RETURNING *`, vals);
+      const ph = keys.map(function(_, i) { return '$' + (i+1); }).join(', ');
+      const r = await query('INSERT INTO ' + db + ' (' + cols + ') VALUES (' + ph + ') RETURNING *', vals);
       res.status(201).json(toCamel(r.rows[0]));
-    } catch (e: any) { sendError(res, e.message); }
+    } catch (e) { sendError(res, e.message); }
   });
 
-  app.put(`/api/${table}/:id`, authenticateToken, async (req: AuthRequest, res: Response) => {
+  app.put('/api/' + table + '/:id', authenticateToken, async function(req, res) {
     try {
-      const body = { ...req.body }; delete body.id; delete body.uid;
+      const body = Object.assign({}, req.body);
+      delete body.id; delete body.uid;
       const keys = Object.keys(body);
       const vals = Object.values(body).map(serialize);
-      const existing = await query(`SELECT ${idCol} FROM ${db} WHERE ${idCol} = $1`, [req.params.id]);
+      const existing = await query('SELECT ' + idCol + ' FROM ' + db + ' WHERE ' + idCol + ' = $1', [req.params.id]);
       if (existing.rows.length) {
-        const set = keys.map((k,i) => `${toSnake(k)} = $${i+1}`).join(', ');
-        const r = await query(`UPDATE ${db} SET ${set} WHERE ${idCol} = $${keys.length+1} RETURNING *`, [...vals, req.params.id]);
+        const set = keys.map(function(k,i) { return toSnake(k) + ' = $' + (i+1); }).join(', ');
+        const r = await query('UPDATE ' + db + ' SET ' + set + ' WHERE ' + idCol + ' = $' + (keys.length+1) + ' RETURNING *', vals.concat([req.params.id]));
         res.json(toCamel(r.rows[0]));
       } else {
-        const allK = [idCol, ...keys], allV = [req.params.id, ...vals];
-        const r = await query(`INSERT INTO ${db} (${allK.map(toSnake).join(', ')}) VALUES (${allK.map((_,i)=>`$${i+1}`).join(', ')}) RETURNING *`, allV);
+        const allK = [idCol].concat(keys), allV = [req.params.id].concat(vals);
+        const r = await query('INSERT INTO ' + db + ' (' + allK.map(toSnake).join(', ') + ') VALUES (' + allK.map(function(_,i){ return '$'+(i+1); }).join(', ') + ') RETURNING *', allV);
         res.status(201).json(toCamel(r.rows[0]));
       }
-    } catch (e: any) { sendError(res, e.message); }
+    } catch (e) { sendError(res, e.message); }
   });
 
-  app.patch(`/api/${table}/:id`, authenticateToken, async (req: AuthRequest, res: Response) => {
+  app.patch('/api/' + table + '/:id', authenticateToken, async function(req, res) {
     try {
-      const body = { ...req.body }; delete body.id; delete body.uid;
+      const body = Object.assign({}, req.body);
+      delete body.id; delete body.uid;
       const keys = Object.keys(body);
       if (!keys.length) return res.json({ success: true });
       const vals = Object.values(body).map(serialize);
-      const set = keys.map((k,i) => `${toSnake(k)} = $${i+1}`).join(', ');
-      const r = await query(`UPDATE ${db} SET ${set} WHERE ${idCol} = $${keys.length+1} RETURNING *`, [...vals, req.params.id]);
+      const set = keys.map(function(k,i) { return toSnake(k) + ' = $' + (i+1); }).join(', ');
+      const r = await query('UPDATE ' + db + ' SET ' + set + ' WHERE ' + idCol + ' = $' + (keys.length+1) + ' RETURNING *', vals.concat([req.params.id]));
       res.json(toCamel(r.rows[0]));
-    } catch (e: any) { sendError(res, e.message); }
+    } catch (e) { sendError(res, e.message); }
   });
 
-  app.delete(`/api/${table}/:id`, authenticateToken, async (req: AuthRequest, res: Response) => {
+  app.delete('/api/' + table + '/:id', authenticateToken, async function(req, res) {
     try {
-      await query(`DELETE FROM ${db} WHERE ${idCol} = $1`, [req.params.id]);
+      await query('DELETE FROM ' + db + ' WHERE ' + idCol + ' = $1', [req.params.id]);
       res.json({ success: true });
-    } catch (e: any) { sendError(res, e.message); }
+    } catch (e) { sendError(res, e.message); }
   });
 });
 
-// ─── 404 + ERROR HANDLER ──────────────────────────────────────────────────
-app.use('/api/*', (req: Request, res: Response) => {
-  res.status(404).json({ error: `Route ${req.originalUrl} introuvable`, success: false });
+// ─── 404 + ERROR ──────────────────────────────────────────────────────────
+app.use('/api/*', function(req, res) {
+  res.status(404).json({ error: 'Route ' + req.originalUrl + ' introuvable', success: false });
 });
 
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+app.use(function(err, req, res, next) {
   console.error('[Error]', err);
   if (err.code === '23505') return res.status(409).json({ error: 'Valeur déjà existante', success: false });
   res.status(err.status || 500).json({ error: err.message || 'Erreur interne', success: false });
