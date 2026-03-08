@@ -1,112 +1,237 @@
-import express from 'express';
+﻿import express from 'express';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
-import compression from 'compression';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { initDB, query } from '../db';
-import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { Pool } from 'pg';
+import { Request, Response, NextFunction } from 'express';
 
 dotenv.config();
 
 const startTime = Date.now();
 
+// ─── DATABASE (inline) ────────────────────────────────────────────────────
+const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+      max: 5,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    })
+  : null;
+
+const query = async (text: string, params?: any[]) => {
+  if (!pool) throw new Error('DATABASE_URL manquant dans les variables Vercel.');
+  return pool.query(text, params);
+};
+
+const initDB = async () => {
+  if (!pool) return;
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS otps (
+        id SERIAL PRIMARY KEY,
+        identifier VARCHAR(255) NOT NULL,
+        code VARCHAR(10) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS users (
+        uid VARCHAR(255) PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        first_name VARCHAR(255) NOT NULL,
+        last_name VARCHAR(255) NOT NULL,
+        whatsapp VARCHAR(255),
+        campus VARCHAR(255),
+        department VARCHAR(255),
+        gender VARCHAR(50),
+        country VARCHAR(255),
+        availability VARCHAR(255),
+        languages JSONB,
+        offered_skills JSONB,
+        requested_skills JSONB,
+        bio TEXT,
+        avatar TEXT,
+        cover_photo VARCHAR(255),
+        credits INTEGER DEFAULT 5,
+        role VARCHAR(50) DEFAULT 'user',
+        status VARCHAR(50) DEFAULT 'active',
+        verified BOOLEAN DEFAULT true,
+        is_verified_email BOOLEAN DEFAULT true,
+        is_verified_sms BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS services (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255),
+        user_name VARCHAR(255),
+        title VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        credit_cost INTEGER NOT NULL,
+        category VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'proposed',
+        accepted_by VARCHAR(255),
+        accepted_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS requests (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(255),
+        user_name VARCHAR(255),
+        title VARCHAR(255) NOT NULL,
+        description TEXT NOT NULL,
+        credit_offer INTEGER NOT NULL,
+        category VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'proposed',
+        fulfilled_by VARCHAR(255),
+        fulfilled_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS blogs (
+        id SERIAL PRIMARY KEY,
+        author_id VARCHAR(255),
+        author_name VARCHAR(255),
+        author_avatar VARCHAR(255),
+        title VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL,
+        category VARCHAR(255),
+        media JSONB DEFAULT '[]',
+        likes TEXT[] DEFAULT '{}',
+        dislikes TEXT[] DEFAULT '{}',
+        shares INTEGER DEFAULT 0,
+        reposts INTEGER DEFAULT 0,
+        comments JSONB DEFAULT '[]',
+        external_link VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS testimonials (
+        id SERIAL PRIMARY KEY,
+        author_id VARCHAR(255),
+        author_name VARCHAR(255),
+        author_avatar VARCHAR(255),
+        content TEXT NOT NULL,
+        rating INTEGER NOT NULL,
+        media JSONB DEFAULT '[]',
+        likes TEXT[] DEFAULT '{}',
+        dislikes TEXT[] DEFAULT '{}',
+        shares INTEGER DEFAULT 0,
+        reposts INTEGER DEFAULT 0,
+        comments JSONB DEFAULT '[]',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS forum_topics (
+        id SERIAL PRIMARY KEY,
+        author_id VARCHAR(255),
+        author_name VARCHAR(255),
+        author_avatar VARCHAR(255),
+        title VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL,
+        category VARCHAR(255),
+        media JSONB DEFAULT '[]',
+        likes TEXT[] DEFAULT '{}',
+        dislikes TEXT[] DEFAULT '{}',
+        shares INTEGER DEFAULT 0,
+        reposts INTEGER DEFAULT 0,
+        comments JSONB DEFAULT '[]',
+        external_link VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS connections (
+        id SERIAL PRIMARY KEY,
+        sender_id VARCHAR(255),
+        receiver_id VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'sent',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS transactions (
+        id SERIAL PRIMARY KEY,
+        from_id VARCHAR(255),
+        to_id VARCHAR(255),
+        amount INTEGER NOT NULL,
+        service_title VARCHAR(255),
+        type VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('[DB] Tables initialisées');
+  } catch (err) {
+    console.error('[DB] Erreur init:', err);
+  } finally {
+    client.release();
+  }
+};
+
 // Init DB non-bloquant
-initDB().catch((err: any) =>
-  console.error('[DB] Erreur init:', err?.message || err)
-);
+initDB().catch(err => console.error('[DB] Init failed:', err?.message));
+
+// ─── AUTH MIDDLEWARE (inline) ─────────────────────────────────────────────
+interface AuthRequest extends Request { user?: any; }
+
+const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+  const token = req.headers['authorization']?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Token manquant', success: false });
+  jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret', (err: any, user: any) => {
+    if (err) return res.status(403).json({ error: 'Token invalide', success: false });
+    req.user = user;
+    next();
+  });
+};
 
 // ─── OTP ──────────────────────────────────────────────────────────────────
-const generateSecureOTP = () =>
-  Math.floor(100000 + Math.random() * 900000).toString();
+const generateOTP = () => Math.floor(100000 + Math.random() * 900000).toString();
 
-// ─── Nodemailer ───────────────────────────────────────────────────────────
+// ─── NODEMAILER ───────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
   service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
+  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
 });
 
-// ─── TextBee SMS ──────────────────────────────────────────────────────────
-const sendSMS = async (to: string, message: string): Promise<boolean> => {
-  const apiKey = process.env.TEXTBEE_API_KEY;
-  const deviceId = process.env.TEXTBEE_SENDER_ID;
-
-  if (!apiKey || !deviceId) {
-    console.warn('[TextBee] Clés manquantes - SMS ignoré');
-    return false;
-  }
-
+// ─── SMS TEXTBEE ──────────────────────────────────────────────────────────
+const sendSMS = async (to: string, message: string) => {
+  if (!process.env.TEXTBEE_API_KEY || !process.env.TEXTBEE_SENDER_ID) return false;
   try {
-    const nodeFetch = await import('node-fetch');
-    const fetchFn = nodeFetch.default || nodeFetch;
-    const response = await (fetchFn as any)(
-      'https://api.textbee.dev/api/v1/gateway/devices/send-sms',
-      {
-        method: 'POST',
-        headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receiver: to, message, deviceId }),
-      }
-    );
-    return response.ok;
-  } catch (error: any) {
-    console.error('[TextBee] Erreur:', error.message);
-    return false;
-  }
+    const res = await fetch('https://api.textbee.dev/api/v1/gateway/devices/send-sms', {
+      method: 'POST',
+      headers: { 'x-api-key': process.env.TEXTBEE_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ receiver: to, message, deviceId: process.env.TEXTBEE_SENDER_ID }),
+    });
+    return res.ok;
+  } catch { return false; }
 };
 
-// ─── Express App ─────────────────────────────────────────────────────────
+// ─── EXPRESS ──────────────────────────────────────────────────────────────
 const app = express();
-
-app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 
-// Force JSON sur toutes les réponses API
-app.use('/api', (_req: express.Request, res: express.Response, next: express.NextFunction) => {
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  next();
-});
-
-// ─── Helper sendError ─────────────────────────────────────────────────────
-const sendError = (
-  res: express.Response,
-  message: string,
-  status = 500,
-  code?: string
-) => {
+const sendError = (res: Response, message: string, status = 500, code?: string) =>
   res.status(status).json({ error: message, success: false, ...(code ? { code } : {}) });
-};
 
-// ─── Health ───────────────────────────────────────────────────────────────
-app.get('/api/health', async (_req: express.Request, res: express.Response) => {
+// ─── HEALTH ───────────────────────────────────────────────────────────────
+app.get('/api/health', async (_req: Request, res: Response) => {
   try {
     await query('SELECT 1');
     res.json({ status: 'ok', database: 'connected', uptime: Date.now() - startTime });
   } catch (err: any) {
-    res.status(503).json({
-      status: 'error',
-      database: 'disconnected',
-      error: err.message,
-      success: false,
-    });
+    res.status(503).json({ status: 'error', database: 'disconnected', error: err.message, success: false });
   }
 });
 
-// ─── POST /api/verify/init ────────────────────────────────────────────────
-app.post('/api/verify/init', async (req: express.Request, res: express.Response) => {
+// ─── VERIFY INIT ──────────────────────────────────────────────────────────
+app.post('/api/verify/init', async (req: Request, res: Response) => {
   const { email, phone } = req.body;
+  if (!email || !email.endsWith('@etu-usenghor.org'))
+    return sendError(res, 'Email invalide ou domaine non autorisé.', 400);
+  if (!phone || !/^\+[1-9]\d{1,14}$/.test(phone))
+    return sendError(res, 'Format de téléphone invalide (ex: +221...)', 400);
 
-  if (!email || !email.endsWith('@etu-usenghor.org')) {
-    return sendError(res, 'Email invalide ou domaine non autorisé.', 400, 'INVALID_EMAIL');
-  }
-  if (!phone || !/^\+[1-9]\d{1,14}$/.test(phone)) {
-    return sendError(res, 'Format de téléphone invalide. Utilisez le format international (ex: +221...)', 400, 'INVALID_PHONE');
-  }
-
-  const emailOtp = generateSecureOTP();
-  const phoneOtp = generateSecureOTP();
+  const emailOtp = generateOTP();
+  const phoneOtp = generateOTP();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
   try {
@@ -117,265 +242,204 @@ app.post('/api/verify/init', async (req: express.Request, res: express.Response)
     transporter.sendMail({
       from: `"Bourse du Temps" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: 'Code de sécurité – Inscription',
-      html: `
-        <div style="font-family:sans-serif;padding:20px;border:1px solid #eee;border-radius:10px;max-width:500px;margin:0 auto;">
-          <h2 style="color:#1e40af;">Vérification de votre adresse email</h2>
-          <p>Vous avez demandé à vous inscrire sur la <strong>Bourse du Temps – Université Senghor</strong>.</p>
-          <p>Voici votre code de sécurité à 6 chiffres (valable 10 minutes) :</p>
-          <div style="background:#f3f4f6;padding:15px;text-align:center;border-radius:8px;margin:20px 0;">
-            <strong style="font-size:32px;letter-spacing:4px;color:#1f2937;">${emailOtp}</strong>
-          </div>
-          <p style="font-size:12px;color:#6b7280;">Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+      subject: 'Code de sécurité – Inscription Bourse du Temps',
+      html: `<div style="font-family:sans-serif;padding:20px;max-width:500px;margin:0 auto;border:1px solid #eee;border-radius:10px;">
+        <h2 style="color:#1e40af;">Vérification de votre email</h2>
+        <p>Votre code d'inscription (valable 10 minutes) :</p>
+        <div style="background:#f3f4f6;padding:15px;text-align:center;border-radius:8px;margin:20px 0;">
+          <strong style="font-size:32px;letter-spacing:4px;color:#1f2937;">${emailOtp}</strong>
         </div>
-      `,
-    }).catch((emailError: any) => {
-      console.error('[Email] Erreur envoi:', emailError.message);
-      console.log(`[DEV] Email OTP pour ${email}: ${emailOtp}`);
-    });
+        <p style="font-size:12px;color:#6b7280;">Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+      </div>`,
+    }).catch((e: any) => console.log(`[DEV] Email OTP ${email}: ${emailOtp} (erreur: ${e.message})`));
 
-    sendSMS(phone, `Bourse du Temps: Votre code est ${phoneOtp}. Valable 10 min.`)
-      .then((sent) => { if (!sent) console.log(`[DEV] Phone OTP pour ${phone}: ${phoneOtp}`); })
-      .catch(() => console.log(`[DEV] Phone OTP pour ${phone}: ${phoneOtp}`));
+    sendSMS(phone, `Bourse du Temps: code ${phoneOtp}. Valable 10 min.`)
+      .then(ok => { if (!ok) console.log(`[DEV] SMS OTP ${phone}: ${phoneOtp}`); });
 
     res.json({ success: true, message: 'Codes envoyés. Vérifiez votre email et SMS.' });
-  } catch (error: any) {
-    console.error('[Verify Init] Erreur:', error);
-    sendError(res, 'Erreur lors de la génération des codes de vérification.');
+  } catch (err: any) {
+    console.error('[verify/init]', err);
+    sendError(res, 'Erreur génération des codes.');
   }
 });
 
-// ─── POST /api/verify/check ───────────────────────────────────────────────
-app.post('/api/verify/check', async (req: express.Request, res: express.Response) => {
+// ─── VERIFY CHECK ─────────────────────────────────────────────────────────
+app.post('/api/verify/check', async (req: Request, res: Response) => {
   const { email, phone, emailCode, phoneCode } = req.body;
-
-  if (!email || !phone || !emailCode || !phoneCode) {
+  if (!email || !phone || !emailCode || !phoneCode)
     return sendError(res, 'Tous les champs sont requis.', 400);
-  }
-
   try {
-    const emailResult = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`email:${email}`]);
-    const phoneResult = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`phone:${phone}`]);
-
-    const storedEmail = emailResult.rows[0];
-    const storedPhone = phoneResult.rows[0];
-
-    if (!storedEmail || storedEmail.code !== emailCode || new Date() > new Date(storedEmail.expires_at)) {
-      return sendError(res, 'Code email invalide ou expiré.', 400, 'INVALID_EMAIL_CODE');
-    }
-    if (!storedPhone || storedPhone.code !== phoneCode || new Date() > new Date(storedPhone.expires_at)) {
-      return sendError(res, 'Code SMS invalide ou expiré.', 400, 'INVALID_SMS_CODE');
-    }
-
-    res.json({ success: true, message: 'Codes vérifiés avec succès.' });
-  } catch (error: any) {
-    console.error('[Verify Check] Erreur:', error);
-    sendError(res, 'Erreur lors de la vérification des codes.');
+    const er = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`email:${email}`]);
+    const pr = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`phone:${phone}`]);
+    const se = er.rows[0], sp = pr.rows[0];
+    if (!se || se.code !== emailCode || new Date() > new Date(se.expires_at))
+      return sendError(res, 'Code email invalide ou expiré.', 400);
+    if (!sp || sp.code !== phoneCode || new Date() > new Date(sp.expires_at))
+      return sendError(res, 'Code SMS invalide ou expiré.', 400);
+    res.json({ success: true });
+  } catch (err: any) {
+    sendError(res, 'Erreur vérification codes.');
   }
 });
 
-// ─── POST /api/register ───────────────────────────────────────────────────
-app.post('/api/register', async (req: express.Request, res: express.Response) => {
+// ─── REGISTER ─────────────────────────────────────────────────────────────
+app.post('/api/register', async (req: Request, res: Response) => {
   const { email, phone, emailCode, phoneCode, password, firstName, lastName, campus, department, gender, country, offeredSkills, requestedSkills, availability, languages, avatar } = req.body;
-
-  if (!email || !phone || !emailCode || !phoneCode || !password || !firstName || !lastName) {
-    return sendError(res, 'Champs obligatoires manquants.', 400, 'MISSING_FIELDS');
-  }
-
+  if (!email || !phone || !emailCode || !phoneCode || !password || !firstName || !lastName)
+    return sendError(res, 'Champs obligatoires manquants.', 400);
   try {
-    const emailResult = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`email:${email}`]);
-    const phoneResult = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`phone:${phone}`]);
+    const er = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`email:${email}`]);
+    const pr = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', [`phone:${phone}`]);
+    const se = er.rows[0], sp = pr.rows[0];
+    if (!se || se.code !== emailCode || new Date() > new Date(se.expires_at))
+      return sendError(res, 'Code email invalide ou expiré.', 403);
+    if (!sp || sp.code !== phoneCode || new Date() > new Date(sp.expires_at))
+      return sendError(res, 'Code SMS invalide ou expiré.', 403);
 
-    const storedEmail = emailResult.rows[0];
-    const storedPhone = phoneResult.rows[0];
-
-    if (!storedEmail || storedEmail.code !== emailCode || new Date() > new Date(storedEmail.expires_at)) {
-      return sendError(res, 'Échec de sécurité : Code email invalide ou expiré.', 403, 'INVALID_EMAIL_CODE');
-    }
-    if (!storedPhone || storedPhone.code !== phoneCode || new Date() > new Date(storedPhone.expires_at)) {
-      return sendError(res, 'Échec de sécurité : Code SMS invalide ou expiré.', 403, 'INVALID_SMS_CODE');
-    }
-
-    const existingUser = await query('SELECT uid FROM users WHERE email = $1', [email]);
-    if (existingUser.rows.length > 0) {
-      return sendError(res, 'Cet email est déjà utilisé.', 409, 'EMAIL_EXISTS');
-    }
+    const existing = await query('SELECT uid FROM users WHERE email = $1', [email]);
+    if (existing.rows.length > 0) return sendError(res, 'Cet email est déjà utilisé.', 409);
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const uid = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
     await query(
-      `INSERT INTO users (uid, email, password, first_name, last_name, whatsapp, campus, department, gender, country, offered_skills, requested_skills, availability, languages, avatar, verified, is_verified_email, is_verified_sms)
+      `INSERT INTO users (uid,email,password,first_name,last_name,whatsapp,campus,department,gender,country,offered_skills,requested_skills,availability,languages,avatar,verified,is_verified_email,is_verified_sms)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,true,true,true)`,
-      [uid, email, hashedPassword, firstName, lastName, phone, campus || null, department || null, gender || null, country || null, JSON.stringify(offeredSkills || []), JSON.stringify(requestedSkills || []), availability || null, JSON.stringify(languages || []), avatar || null]
+      [uid, email, hashedPassword, firstName, lastName, phone, campus||null, department||null, gender||null, country||null,
+       JSON.stringify(offeredSkills||[]), JSON.stringify(requestedSkills||[]), availability||null, JSON.stringify(languages||[]), avatar||null]
     );
-
     await query('DELETE FROM otps WHERE identifier = $1 OR identifier = $2', [`email:${email}`, `phone:${phone}`]);
 
     const token = jwt.sign({ uid, email }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
-
     res.status(201).json({ success: true, uid, token });
-  } catch (error: any) {
-    console.error('[Register] Erreur:', error);
-    if (error.code === '23505') {
-      return sendError(res, 'Cet email est déjà utilisé.', 409, 'EMAIL_EXISTS');
-    }
-    sendError(res, process.env.NODE_ENV === 'production' ? 'Erreur lors de l\'inscription. Veuillez réessayer.' : error.message);
+  } catch (err: any) {
+    console.error('[register]', err);
+    if (err.code === '23505') return sendError(res, 'Cet email est déjà utilisé.', 409);
+    sendError(res, 'Erreur inscription. Veuillez réessayer.');
   }
 });
 
-// ─── POST /api/login ──────────────────────────────────────────────────────
-app.post('/api/login', async (req: express.Request, res: express.Response) => {
+// ─── LOGIN ────────────────────────────────────────────────────────────────
+app.post('/api/login', async (req: Request, res: Response) => {
   const { email, password } = req.body;
-
-  if (!email || !password) {
-    return sendError(res, 'Email et mot de passe requis.', 400, 'MISSING_FIELDS');
-  }
-
+  if (!email || !password) return sendError(res, 'Email et mot de passe requis.', 400);
   try {
     const result = await query('SELECT * FROM users WHERE email = $1', [email]);
-    if (result.rows.length === 0) {
-      return sendError(res, 'Email ou mot de passe incorrect.', 401, 'INVALID_CREDENTIALS');
-    }
-
+    if (!result.rows.length) return sendError(res, 'Email ou mot de passe incorrect.', 401);
     const user = result.rows[0];
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return sendError(res, 'Email ou mot de passe incorrect.', 401, 'INVALID_CREDENTIALS');
-    }
-
+    if (!await bcrypt.compare(password, user.password))
+      return sendError(res, 'Email ou mot de passe incorrect.', 401);
     const token = jwt.sign({ uid: user.uid, email: user.email }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
-    const { password: _, ...userWithoutPassword } = user;
-    res.json({ success: true, token, user: userWithoutPassword });
-  } catch (error: any) {
-    console.error('[Login] Erreur:', error);
-    sendError(res, process.env.NODE_ENV === 'production' ? 'Erreur de connexion. Veuillez réessayer.' : error.message);
+    const { password: _, ...u } = user;
+    res.json({ success: true, token, user: u });
+  } catch (err: any) {
+    sendError(res, 'Erreur de connexion. Veuillez réessayer.');
   }
 });
 
-// ─── GET /api/auth/me ─────────────────────────────────────────────────────
-app.get('/api/auth/me', authenticateToken, async (req: AuthRequest, res: express.Response) => {
+// ─── AUTH/ME ──────────────────────────────────────────────────────────────
+app.get('/api/auth/me', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const result = await query('SELECT * FROM users WHERE uid = $1', [req.user.uid]);
-    if (result.rows.length === 0) {
-      return sendError(res, 'Utilisateur non trouvé.', 404, 'USER_NOT_FOUND');
-    }
-    const { password, ...userWithoutPassword } = result.rows[0];
-    res.json({ ...userWithoutPassword, success: true });
-  } catch (error: any) {
-    sendError(res, error.message);
-  }
+    if (!result.rows.length) return sendError(res, 'Utilisateur non trouvé.', 404);
+    const { password, ...u } = result.rows[0];
+    res.json({ ...u, success: true });
+  } catch (err: any) { sendError(res, err.message); }
 });
 
-// ─── CRUD générique ───────────────────────────────────────────────────────
-const tables = ['users', 'services', 'requests', 'blogs', 'testimonials', 'forumTopics', 'connections', 'transactions'];
+// ─── CRUD GÉNÉRIQUE ───────────────────────────────────────────────────────
+const tables = ['users','services','requests','blogs','testimonials','forumTopics','connections','transactions'];
 
-const toCamelCase = (obj: any): any => {
-  if (Array.isArray(obj)) return obj.map((v) => toCamelCase(v));
-  if (obj !== null && obj?.constructor === Object) {
-    return Object.keys(obj).reduce((result, key) => {
-      const camelKey = key.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
-      result[camelKey] = toCamelCase(obj[key]);
-      return result;
+const toCamel = (obj: any): any => {
+  if (Array.isArray(obj)) return obj.map(toCamel);
+  if (obj && obj.constructor === Object)
+    return Object.keys(obj).reduce((r, k) => {
+      r[k.replace(/_([a-z])/g, g => g[1].toUpperCase())] = toCamel(obj[k]);
+      return r;
     }, {} as any);
-  }
   return obj;
 };
 
-tables.forEach((table) => {
-  const dbTable = table === 'forumTopics' ? 'forum_topics' : table;
+const toSnake = (k: string) => k.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`);
+const serialize = (v: any) => (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v;
 
-  app.get(`/api/${table}`, async (_req: express.Request, res: express.Response) => {
-    try {
-      const result = await query(`SELECT * FROM ${dbTable} ORDER BY created_at DESC`);
-      res.json(toCamelCase(result.rows));
-    } catch (error: any) { sendError(res, error.message); }
+tables.forEach(table => {
+  const db = table === 'forumTopics' ? 'forum_topics' : table;
+  const idCol = table === 'users' ? 'uid' : 'id';
+
+  app.get(`/api/${table}`, async (_req: Request, res: Response) => {
+    try { res.json(toCamel((await query(`SELECT * FROM ${db} ORDER BY created_at DESC`)).rows)); }
+    catch (e: any) { sendError(res, e.message); }
   });
 
-  app.get(`/api/${table}/:id`, async (req: express.Request, res: express.Response) => {
+  app.get(`/api/${table}/:id`, async (req: Request, res: Response) => {
     try {
-      const idCol = table === 'users' ? 'uid' : 'id';
-      const result = await query(`SELECT * FROM ${dbTable} WHERE ${idCol} = $1`, [req.params.id]);
-      if (result.rows.length === 0) return sendError(res, 'Ressource introuvable', 404, 'NOT_FOUND');
-      res.json(toCamelCase(result.rows[0]));
-    } catch (error: any) { sendError(res, error.message); }
+      const r = await query(`SELECT * FROM ${db} WHERE ${idCol} = $1`, [req.params.id]);
+      if (!r.rows.length) return sendError(res, 'Introuvable', 404);
+      res.json(toCamel(r.rows[0]));
+    } catch (e: any) { sendError(res, e.message); }
   });
 
-  app.post(`/api/${table}`, authenticateToken, async (req: AuthRequest, res: express.Response) => {
+  app.post(`/api/${table}`, authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
-      const body = { ...req.body };
-      delete body.id; delete body.uid;
+      const body = { ...req.body }; delete body.id; delete body.uid;
       const keys = Object.keys(body);
-      if (keys.length === 0) return sendError(res, 'Corps vide', 400);
-      const values = Object.values(body).map((v) => typeof v === 'object' && v !== null ? JSON.stringify(v) : v);
-      const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
-      const columns = keys.map((k) => k.replace(/[A-Z]/g, (l) => `_${l.toLowerCase()}`)).join(', ');
-      const result = await query(`INSERT INTO ${dbTable} (${columns}) VALUES (${placeholders}) RETURNING *`, values);
-      res.status(201).json(toCamelCase(result.rows[0]));
-    } catch (error: any) { sendError(res, error.message); }
+      if (!keys.length) return sendError(res, 'Corps vide', 400);
+      const cols = keys.map(toSnake).join(', ');
+      const vals = Object.values(body).map(serialize);
+      const ph = keys.map((_, i) => `$${i+1}`).join(', ');
+      const r = await query(`INSERT INTO ${db} (${cols}) VALUES (${ph}) RETURNING *`, vals);
+      res.status(201).json(toCamel(r.rows[0]));
+    } catch (e: any) { sendError(res, e.message); }
   });
 
-  app.put(`/api/${table}/:id`, authenticateToken, async (req: AuthRequest, res: express.Response) => {
+  app.put(`/api/${table}/:id`, authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
-      const idCol = table === 'users' ? 'uid' : 'id';
-      const body = { ...req.body };
-      delete body.id; delete body.uid;
+      const body = { ...req.body }; delete body.id; delete body.uid;
       const keys = Object.keys(body);
-      const values = Object.values(body).map((v) => typeof v === 'object' && v !== null ? JSON.stringify(v) : v);
-      const existing = await query(`SELECT ${idCol} FROM ${dbTable} WHERE ${idCol} = $1`, [req.params.id]);
-      if (existing.rows.length > 0) {
-        const setClause = keys.map((k, i) => `${k.replace(/[A-Z]/g, (l) => `_${l.toLowerCase()}`)} = $${i + 1}`).join(', ');
-        const result = await query(`UPDATE ${dbTable} SET ${setClause} WHERE ${idCol} = $${keys.length + 1} RETURNING *`, [...values, req.params.id]);
-        res.json(toCamelCase(result.rows[0]));
+      const vals = Object.values(body).map(serialize);
+      const existing = await query(`SELECT ${idCol} FROM ${db} WHERE ${idCol} = $1`, [req.params.id]);
+      if (existing.rows.length) {
+        const set = keys.map((k,i) => `${toSnake(k)} = $${i+1}`).join(', ');
+        const r = await query(`UPDATE ${db} SET ${set} WHERE ${idCol} = $${keys.length+1} RETURNING *`, [...vals, req.params.id]);
+        res.json(toCamel(r.rows[0]));
       } else {
-        const allKeys = [idCol, ...keys];
-        const allValues = [req.params.id, ...values];
-        const placeholders = allKeys.map((_, i) => `$${i + 1}`).join(', ');
-        const columns = allKeys.map((k) => k.replace(/[A-Z]/g, (l) => `_${l.toLowerCase()}`)).join(', ');
-        const result = await query(`INSERT INTO ${dbTable} (${columns}) VALUES (${placeholders}) RETURNING *`, allValues);
-        res.status(201).json(toCamelCase(result.rows[0]));
+        const allK = [idCol, ...keys], allV = [req.params.id, ...vals];
+        const r = await query(`INSERT INTO ${db} (${allK.map(toSnake).join(', ')}) VALUES (${allK.map((_,i)=>`$${i+1}`).join(', ')}) RETURNING *`, allV);
+        res.status(201).json(toCamel(r.rows[0]));
       }
-    } catch (error: any) { sendError(res, error.message); }
+    } catch (e: any) { sendError(res, e.message); }
   });
 
-  app.patch(`/api/${table}/:id`, authenticateToken, async (req: AuthRequest, res: express.Response) => {
+  app.patch(`/api/${table}/:id`, authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
-      const idCol = table === 'users' ? 'uid' : 'id';
-      const body = { ...req.body };
-      delete body.id; delete body.uid;
+      const body = { ...req.body }; delete body.id; delete body.uid;
       const keys = Object.keys(body);
-      if (keys.length === 0) return res.json({ success: true });
-      const values = Object.values(body).map((v) => typeof v === 'object' && v !== null ? JSON.stringify(v) : v);
-      const setClause = keys.map((k, i) => `${k.replace(/[A-Z]/g, (l) => `_${l.toLowerCase()}`)} = $${i + 1}`).join(', ');
-      const result = await query(`UPDATE ${dbTable} SET ${setClause} WHERE ${idCol} = $${keys.length + 1} RETURNING *`, [...values, req.params.id]);
-      res.json(toCamelCase(result.rows[0]));
-    } catch (error: any) { sendError(res, error.message); }
+      if (!keys.length) return res.json({ success: true });
+      const vals = Object.values(body).map(serialize);
+      const set = keys.map((k,i) => `${toSnake(k)} = $${i+1}`).join(', ');
+      const r = await query(`UPDATE ${db} SET ${set} WHERE ${idCol} = $${keys.length+1} RETURNING *`, [...vals, req.params.id]);
+      res.json(toCamel(r.rows[0]));
+    } catch (e: any) { sendError(res, e.message); }
   });
 
-  app.delete(`/api/${table}/:id`, authenticateToken, async (req: AuthRequest, res: express.Response) => {
+  app.delete(`/api/${table}/:id`, authenticateToken, async (req: AuthRequest, res: Response) => {
     try {
-      const idCol = table === 'users' ? 'uid' : 'id';
-      await query(`DELETE FROM ${dbTable} WHERE ${idCol} = $1`, [req.params.id]);
+      await query(`DELETE FROM ${db} WHERE ${idCol} = $1`, [req.params.id]);
       res.json({ success: true });
-    } catch (error: any) { sendError(res, error.message); }
+    } catch (e: any) { sendError(res, e.message); }
   });
 });
 
-// ─── 404 + Error Handler ──────────────────────────────────────────────────
-app.use('/api/*', (req: express.Request, res: express.Response) => {
-  res.status(404).json({ error: `Route ${req.originalUrl} introuvable`, success: false, code: 'NOT_FOUND' });
+// ─── 404 + ERROR HANDLER ──────────────────────────────────────────────────
+app.use('/api/*', (req: Request, res: Response) => {
+  res.status(404).json({ error: `Route ${req.originalUrl} introuvable`, success: false });
 });
 
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('[Global Error]', err);
-  if (err.code === '23505') {
-    return res.status(409).json({ error: 'Valeur déjà existante', success: false, code: 'DUPLICATE' });
-  }
-  res.status(err.status || 500).json({
-    error: process.env.NODE_ENV === 'production' ? 'Erreur interne du serveur' : err.message || 'Internal Server Error',
-    success: false,
-    code: 'INTERNAL_ERROR',
-  });
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('[Error]', err);
+  if (err.code === '23505') return res.status(409).json({ error: 'Valeur déjà existante', success: false });
+  res.status(err.status || 500).json({ error: err.message || 'Erreur interne', success: false });
 });
 
 export default app;
