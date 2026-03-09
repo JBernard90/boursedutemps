@@ -3,35 +3,25 @@ const nodemailer = require('nodemailer');
 const dotenv = require('dotenv');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { Pool } = require('pg');
+const { neon } = require('@neondatabase/serverless');
 
 dotenv.config();
 
 const startTime = Date.now();
 
 // ─── DATABASE ─────────────────────────────────────────────────────────────
-const pool = process.env.DATABASE_URL
-  ? new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
-      max: 3,
-      idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 30000,
-      keepAlive: true,
-      keepAliveInitialDelayMillis: 10000,
-    })
-  : null;
+const sql = process.env.DATABASE_URL ? neon(process.env.DATABASE_URL) : null;
 
 const query = async (text, params) => {
-  if (!pool) throw new Error('DATABASE_URL manquant dans les variables Vercel.');
-  return pool.query(text, params);
+  if (!sql) throw new Error('DATABASE_URL manquant dans les variables Vercel.');
+  const rows = await sql(text, params || []);
+  return { rows };
 };
 
 const initDB = async () => {
-  if (!pool) return;
-  const client = await pool.connect();
+  if (!sql) return;
   try {
-    await client.query(`
+    await sql(`
       CREATE TABLE IF NOT EXISTS otps (
         id SERIAL PRIMARY KEY,
         identifier VARCHAR(255) NOT NULL,
@@ -163,8 +153,6 @@ const initDB = async () => {
     console.log('[DB] Tables initialisées');
   } catch (err) {
     console.error('[DB] Erreur init:', err);
-  } finally {
-    client.release();
   }
 };
 
