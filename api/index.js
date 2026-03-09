@@ -10,151 +10,159 @@ dotenv.config();
 const startTime = Date.now();
 
 // ─── DATABASE ─────────────────────────────────────────────────────────────
-const query = async (text, params) => {
+const getSql = () => {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL manquant.');
-  const sql = neon(process.env.DATABASE_URL);
-  const rows = await sql.query(text, params || []);
-  return { rows: rows.rows || rows };
+  return neon(process.env.DATABASE_URL);
+};
+
+const query = async (text, params) => {
+  const sql = getSql();
+  const result = await sql(text, params || []);
+  // neon retourne directement un tableau de rows
+  if (Array.isArray(result)) return { rows: result };
+  return { rows: result.rows || [] };
 };
 
 const initDB = async () => {
   if (!process.env.DATABASE_URL) return;
+  const tables = [
+    `CREATE TABLE IF NOT EXISTS otps (
+      id SERIAL PRIMARY KEY,
+      identifier VARCHAR(255) NOT NULL,
+      code VARCHAR(10) NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS users (
+      uid VARCHAR(255) PRIMARY KEY,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      password VARCHAR(255) NOT NULL,
+      first_name VARCHAR(255) NOT NULL,
+      last_name VARCHAR(255) NOT NULL,
+      whatsapp VARCHAR(255),
+      campus VARCHAR(255),
+      department VARCHAR(255),
+      gender VARCHAR(50),
+      country VARCHAR(255),
+      availability VARCHAR(255),
+      languages JSONB,
+      offered_skills JSONB,
+      requested_skills JSONB,
+      bio TEXT,
+      avatar TEXT,
+      cover_photo VARCHAR(255),
+      credits INTEGER DEFAULT 5,
+      role VARCHAR(50) DEFAULT 'user',
+      status VARCHAR(50) DEFAULT 'active',
+      verified BOOLEAN DEFAULT true,
+      is_verified_email BOOLEAN DEFAULT true,
+      is_verified_sms BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS services (
+      id SERIAL PRIMARY KEY,
+      user_id VARCHAR(255),
+      user_name VARCHAR(255),
+      title VARCHAR(255) NOT NULL,
+      description TEXT NOT NULL,
+      credit_cost INTEGER NOT NULL,
+      category VARCHAR(255),
+      status VARCHAR(50) DEFAULT 'proposed',
+      accepted_by VARCHAR(255),
+      accepted_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS requests (
+      id SERIAL PRIMARY KEY,
+      user_id VARCHAR(255),
+      user_name VARCHAR(255),
+      title VARCHAR(255) NOT NULL,
+      description TEXT NOT NULL,
+      credit_offer INTEGER NOT NULL,
+      category VARCHAR(255),
+      status VARCHAR(50) DEFAULT 'proposed',
+      fulfilled_by VARCHAR(255),
+      fulfilled_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS blogs (
+      id SERIAL PRIMARY KEY,
+      author_id VARCHAR(255),
+      author_name VARCHAR(255),
+      author_avatar VARCHAR(255),
+      title VARCHAR(255) NOT NULL,
+      content TEXT NOT NULL,
+      category VARCHAR(255),
+      media JSONB DEFAULT '[]',
+      likes TEXT[] DEFAULT '{}',
+      dislikes TEXT[] DEFAULT '{}',
+      shares INTEGER DEFAULT 0,
+      reposts INTEGER DEFAULT 0,
+      comments JSONB DEFAULT '[]',
+      external_link VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS testimonials (
+      id SERIAL PRIMARY KEY,
+      author_id VARCHAR(255),
+      author_name VARCHAR(255),
+      author_avatar VARCHAR(255),
+      content TEXT NOT NULL,
+      rating INTEGER NOT NULL,
+      media JSONB DEFAULT '[]',
+      likes TEXT[] DEFAULT '{}',
+      dislikes TEXT[] DEFAULT '{}',
+      shares INTEGER DEFAULT 0,
+      reposts INTEGER DEFAULT 0,
+      comments JSONB DEFAULT '[]',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS forum_topics (
+      id SERIAL PRIMARY KEY,
+      author_id VARCHAR(255),
+      author_name VARCHAR(255),
+      author_avatar VARCHAR(255),
+      title VARCHAR(255) NOT NULL,
+      content TEXT NOT NULL,
+      category VARCHAR(255),
+      media JSONB DEFAULT '[]',
+      likes TEXT[] DEFAULT '{}',
+      dislikes TEXT[] DEFAULT '{}',
+      shares INTEGER DEFAULT 0,
+      reposts INTEGER DEFAULT 0,
+      comments JSONB DEFAULT '[]',
+      external_link VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS connections (
+      id SERIAL PRIMARY KEY,
+      sender_id VARCHAR(255),
+      receiver_id VARCHAR(255),
+      status VARCHAR(50) DEFAULT 'sent',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS transactions (
+      id SERIAL PRIMARY KEY,
+      from_id VARCHAR(255),
+      to_id VARCHAR(255),
+      amount INTEGER NOT NULL,
+      service_title VARCHAR(255),
+      type VARCHAR(50),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`
+  ];
   try {
-    await query(`
-      CREATE TABLE IF NOT EXISTS otps (
-        id SERIAL PRIMARY KEY,
-        identifier VARCHAR(255) NOT NULL,
-        code VARCHAR(10) NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS users (
-        uid VARCHAR(255) PRIMARY KEY,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        first_name VARCHAR(255) NOT NULL,
-        last_name VARCHAR(255) NOT NULL,
-        whatsapp VARCHAR(255),
-        campus VARCHAR(255),
-        department VARCHAR(255),
-        gender VARCHAR(50),
-        country VARCHAR(255),
-        availability VARCHAR(255),
-        languages JSONB,
-        offered_skills JSONB,
-        requested_skills JSONB,
-        bio TEXT,
-        avatar TEXT,
-        cover_photo VARCHAR(255),
-        credits INTEGER DEFAULT 5,
-        role VARCHAR(50) DEFAULT 'user',
-        status VARCHAR(50) DEFAULT 'active',
-        verified BOOLEAN DEFAULT true,
-        is_verified_email BOOLEAN DEFAULT true,
-        is_verified_sms BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS services (
-        id SERIAL PRIMARY KEY,
-        user_id VARCHAR(255),
-        user_name VARCHAR(255),
-        title VARCHAR(255) NOT NULL,
-        description TEXT NOT NULL,
-        credit_cost INTEGER NOT NULL,
-        category VARCHAR(255),
-        status VARCHAR(50) DEFAULT 'proposed',
-        accepted_by VARCHAR(255),
-        accepted_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS requests (
-        id SERIAL PRIMARY KEY,
-        user_id VARCHAR(255),
-        user_name VARCHAR(255),
-        title VARCHAR(255) NOT NULL,
-        description TEXT NOT NULL,
-        credit_offer INTEGER NOT NULL,
-        category VARCHAR(255),
-        status VARCHAR(50) DEFAULT 'proposed',
-        fulfilled_by VARCHAR(255),
-        fulfilled_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS blogs (
-        id SERIAL PRIMARY KEY,
-        author_id VARCHAR(255),
-        author_name VARCHAR(255),
-        author_avatar VARCHAR(255),
-        title VARCHAR(255) NOT NULL,
-        content TEXT NOT NULL,
-        category VARCHAR(255),
-        media JSONB DEFAULT '[]',
-        likes TEXT[] DEFAULT '{}',
-        dislikes TEXT[] DEFAULT '{}',
-        shares INTEGER DEFAULT 0,
-        reposts INTEGER DEFAULT 0,
-        comments JSONB DEFAULT '[]',
-        external_link VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS testimonials (
-        id SERIAL PRIMARY KEY,
-        author_id VARCHAR(255),
-        author_name VARCHAR(255),
-        author_avatar VARCHAR(255),
-        content TEXT NOT NULL,
-        rating INTEGER NOT NULL,
-        media JSONB DEFAULT '[]',
-        likes TEXT[] DEFAULT '{}',
-        dislikes TEXT[] DEFAULT '{}',
-        shares INTEGER DEFAULT 0,
-        reposts INTEGER DEFAULT 0,
-        comments JSONB DEFAULT '[]',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS forum_topics (
-        id SERIAL PRIMARY KEY,
-        author_id VARCHAR(255),
-        author_name VARCHAR(255),
-        author_avatar VARCHAR(255),
-        title VARCHAR(255) NOT NULL,
-        content TEXT NOT NULL,
-        category VARCHAR(255),
-        media JSONB DEFAULT '[]',
-        likes TEXT[] DEFAULT '{}',
-        dislikes TEXT[] DEFAULT '{}',
-        shares INTEGER DEFAULT 0,
-        reposts INTEGER DEFAULT 0,
-        comments JSONB DEFAULT '[]',
-        external_link VARCHAR(255),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS connections (
-        id SERIAL PRIMARY KEY,
-        sender_id VARCHAR(255),
-        receiver_id VARCHAR(255),
-        status VARCHAR(50) DEFAULT 'sent',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE TABLE IF NOT EXISTS transactions (
-        id SERIAL PRIMARY KEY,
-        from_id VARCHAR(255),
-        to_id VARCHAR(255),
-        amount INTEGER NOT NULL,
-        service_title VARCHAR(255),
-        type VARCHAR(50),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
+    for (const sql of tables) {
+      await query(sql, []);
+    }
     console.log('[DB] Tables initialisées');
   } catch (err) {
-    console.error('[DB] Erreur init:', err);
+    console.error('[DB] Erreur init:', err && err.message);
   }
 };
-
 initDB().catch(err => console.error('[DB] Init failed:', err && err.message));
 
 // ─── AUTH MIDDLEWARE ──────────────────────────────────────────────────────
