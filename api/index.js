@@ -191,27 +191,7 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
 });
 
-// ─── WHATSAPP OTP (TWILIO) ────────────────────────────────────────────────
-const twilio = require('twilio');
-const sendSMS = async (to, message) => {
-  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
-    console.error('[WhatsApp] Variables Twilio manquantes');
-    return false;
-  }
-  try {
-    const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-    const result = await client.messages.create({
-      from: 'whatsapp:' + process.env.TWILIO_WHATSAPP_FROM,
-      to: 'whatsapp:' + to,
-      body: message,
-    });
-    console.log('[WhatsApp] Envoye:', result.sid, result.status);
-    return true;
-  } catch (e) {
-    console.error('[WhatsApp ERROR]', e.message, e.code);
-    return false;
-  }
-};
+// ─── WhatsApp OTP supprimé - email uniquement ───────────────────────────
 
 // ─── EXPRESS ─────────────────────────────────────────────────────────────
 const app = express();
@@ -235,70 +215,53 @@ app.get('/api/health', async (req, res) => {
 // ─── VERIFY INIT ──────────────────────────────────────────────────────────
 app.post('/api/verify/init', async (req, res) => {
   const { email, phone } = req.body;
-  if (!email || !email.endsWith('@etu-usenghor.org'))
-    return sendError(res, 'Email invalide ou domaine non autorisé.', 400);
-  if (!phone || !/^\+[1-9]\d{1,14}$/.test(phone))
-    return sendError(res, 'Format de téléphone invalide (ex: +221...)', 400);
-
-  const emailOtp = generateOTP();
-  const phoneOtp = generateOTP();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
+  if (!email) return sendError(res, 'Email requis.', 400);
   try {
-    await query('DELETE FROM otps WHERE identifier = $1 OR identifier = $2', ['email:' + email, 'phone:' + phone]);
-    await query('INSERT INTO otps (identifier, code, expires_at) VALUES ($1, $2, $3)', ['email:' + email, emailOtp, expiresAt]);
-    await query('INSERT INTO otps (identifier, code, expires_at) VALUES ($1, $2, $3)', ['phone:' + phone, phoneOtp, expiresAt]);
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    await query('DELETE FROM otps WHERE identifier = $1', ['email:' + email]);
+    await query('INSERT INTO otps (identifier, code, expires_at) VALUES ($1, $2, $3)', ['email:' + email, otp, expiresAt]);
 
     transporter.sendMail({
       from: '"Bourse du Temps" <' + process.env.EMAIL_USER + '>',
       to: email,
-      subject: 'Code de sécurité – Inscription Bourse du Temps',
-      html: '<div style="font-family:sans-serif;padding:20px;max-width:500px;margin:0 auto;border:1px solid #eee;border-radius:10px;"><h2 style="color:#1e40af;">Vérification de votre email</h2><p>Votre code d\'inscription (valable 10 minutes) :</p><div style="background:#f3f4f6;padding:15px;text-align:center;border-radius:8px;margin:20px 0;"><strong style="font-size:32px;letter-spacing:4px;color:#1f2937;">' + emailOtp + '</strong></div><p style="font-size:12px;color:#6b7280;">Si vous n\'êtes pas à l\'origine de cette demande, ignorez cet email.</p></div>',
-    }).catch(function(e) { console.log('[DEV] Email OTP ' + email + ': ' + emailOtp + ' (erreur: ' + e.message + ')'); });
+      subject: 'Code de vérification – Bourse du Temps',
+      html: '<div style="font-family:sans-serif;padding:20px;max-width:500px;margin:0 auto;border:1px solid #eee;border-radius:10px;"><h2 style="color:#1e40af;">Vérification de votre email</h2><p>Votre code de vérification (valable <strong>5 minutes</strong>) :</p><div style="background:#f3f4f6;padding:15px;text-align:center;border-radius:8px;margin:20px 0;"><strong style="font-size:32px;letter-spacing:4px;color:#1f2937;">' + otp + '</strong></div><p style="font-size:12px;color:#6b7280;">Si vous n\'etes pas a l\'origine de cette demande, ignorez cet email.</p></div>',
+    }).catch(function(e) { console.error('[Email OTP error]', e.message); });
 
-    sendSMS(phone, 'Bourse du Temps: code ' + phoneOtp + '. Valable 10 min.')
-      .then(function(ok) { if (!ok) console.log('[DEV] SMS OTP ' + phone + ': ' + phoneOtp); });
-
-    res.json({ success: true, message: 'Codes envoyés. Vérifiez votre email et SMS.' });
+    res.json({ success: true, message: 'Code envoyé par email.' });
   } catch (err) {
     console.error('[verify/init]', err);
-    sendError(res, 'Erreur génération des codes.');
+    sendError(res, 'Erreur génération du code.');
   }
 });
 
 // ─── VERIFY CHECK ─────────────────────────────────────────────────────────
 app.post('/api/verify/check', async (req, res) => {
-  const { email, phone, emailCode, phoneCode } = req.body;
-  if (!email || !phone || !emailCode || !phoneCode)
-    return sendError(res, 'Tous les champs sont requis.', 400);
+  const { email, emailCode } = req.body;
+  if (!email || !emailCode) return sendError(res, 'Email et code requis.', 400);
   try {
-    const er = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['email:' + email]);
-    const pr = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['phone:' + phone]);
-    const se = er.rows[0], sp = pr.rows[0];
-    if (!se || se.code !== emailCode || new Date() > new Date(se.expires_at))
-      return sendError(res, 'Code email invalide ou expiré.', 400);
-    if (!sp || sp.code !== phoneCode || new Date() > new Date(sp.expires_at))
-      return sendError(res, 'Code SMS invalide ou expiré.', 400);
+    const r = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['email:' + email]);
+    const otp = r.rows[0];
+    if (!otp || otp.code !== emailCode || new Date() > new Date(otp.expires_at))
+      return sendError(res, 'Code invalide ou expiré.', 400);
     res.json({ success: true });
   } catch (err) {
     console.error('[verify/check]', err);
-    sendError(res, 'Erreur vérification codes.');
+    sendError(res, 'Erreur vérification code.');
   }
 });
 
 // ─── REGISTER ─────────────────────────────────────────────────────────────
 app.post('/api/register', async (req, res) => {
-  const { email, phone, emailCode, phoneCode, password, firstName, lastName, campus, department, gender, country, offeredSkills, requestedSkills, availability, languages, avatar } = req.body;
-  if (!email || !phone || !emailCode || !phoneCode || !password || !firstName || !lastName)
+  const { email, phone, emailCode, password, firstName, lastName, campus, department, gender, country, offeredSkills, requestedSkills, availability, languages, avatar } = req.body;
+  if (!email || !emailCode || !password || !firstName || !lastName)
     return sendError(res, 'Champs obligatoires manquants.', 400);
   try {
-    const er = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['email:' + email]);
-    const pr = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['phone:' + phone]);
-    const se = er.rows[0], sp = pr.rows[0];
-    if (!se || se.code !== emailCode || new Date() > new Date(se.expires_at))
+    const r = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['email:' + email]);
+    const otp = r.rows[0];
+    if (!otp || otp.code !== emailCode || new Date() > new Date(otp.expires_at))
       return sendError(res, 'Code email invalide ou expiré.', 403);
-    if (!sp || sp.code !== phoneCode || new Date() > new Date(sp.expires_at))
-      return sendError(res, 'Code SMS invalide ou expiré.', 403);
 
     const existing = await query('SELECT uid FROM users WHERE email = $1', [email]);
     if (existing.rows.length > 0) return sendError(res, 'Cet email est déjà utilisé.', 409);
@@ -308,10 +271,10 @@ app.post('/api/register', async (req, res) => {
 
     await query(
       'INSERT INTO users (uid,email,password,first_name,last_name,whatsapp,campus,department,gender,country,offered_skills,requested_skills,availability,languages,avatar,verified,is_verified_email,is_verified_sms) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,true,true,true)',
-      [uid, email, hashedPassword, firstName, lastName, phone, campus||null, department||null, gender||null, country||null,
+      [uid, email, hashedPassword, firstName, lastName, phone||null, campus||null, department||null, gender||null, country||null,
        JSON.stringify(offeredSkills||[]), JSON.stringify(requestedSkills||[]), availability||null, JSON.stringify(languages||[]), avatar||null]
     );
-    await query('DELETE FROM otps WHERE identifier = $1 OR identifier = $2', ['email:' + email, 'phone:' + phone]);
+    await query('DELETE FROM otps WHERE identifier = $1', ['email:' + email]);
 
     const token = jwt.sign({ uid, email }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
     res.status(201).json({ success: true, uid, token });
@@ -323,7 +286,7 @@ app.post('/api/register', async (req, res) => {
 });
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────
-app.post('/api/login', async (req, res) => {
+app.post('/api/login/init', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return sendError(res, 'Email et mot de passe requis.', 400);
   try {
@@ -332,6 +295,42 @@ app.post('/api/login', async (req, res) => {
     const user = result.rows[0];
     if (!await bcrypt.compare(password, user.password))
       return sendError(res, 'Email ou mot de passe incorrect.', 401);
+
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    await query('DELETE FROM otps WHERE identifier = $1', ['login:' + email]);
+    await query('INSERT INTO otps (identifier, code, expires_at) VALUES ($1, $2, $3)', ['login:' + email, otp, expiresAt]);
+
+    transporter.sendMail({
+      from: '"Bourse du Temps" <' + process.env.EMAIL_USER + '>',
+      to: email,
+      subject: 'Code de connexion – Bourse du Temps',
+      html: '<div style="font-family:sans-serif;padding:20px;max-width:500px;margin:0 auto;border:1px solid #eee;border-radius:10px;"><h2 style="color:#1e40af;">Connexion a Bourse du Temps</h2><p>Votre code de connexion (valable <strong>5 minutes</strong>) :</p><div style="background:#f3f4f6;padding:15px;text-align:center;border-radius:8px;margin:20px 0;"><strong style="font-size:32px;letter-spacing:4px;color:#1f2937;">' + otp + '</strong></div><p style="font-size:12px;color:#6b7280;">Si vous n\'etes pas a l\'origine de cette demande, changez votre mot de passe.</p></div>',
+    }).catch(function(e) { console.error('[Login OTP error]', e.message); });
+
+    res.json({ success: true, message: 'Code de connexion envoyé par email.' });
+  } catch (err) {
+    console.error('[login/init]', err);
+    sendError(res, 'Erreur de connexion. Veuillez réessayer.');
+  }
+});
+
+app.post('/api/login', async (req, res) => {
+  const { email, password, otp } = req.body;
+  if (!email || !password || !otp) return sendError(res, 'Email, mot de passe et code OTP requis.', 400);
+  try {
+    const result = await query('SELECT * FROM users WHERE email = $1', [email]);
+    if (!result.rows.length) return sendError(res, 'Email ou mot de passe incorrect.', 401);
+    const user = result.rows[0];
+    if (!await bcrypt.compare(password, user.password))
+      return sendError(res, 'Email ou mot de passe incorrect.', 401);
+
+    const r = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['login:' + email]);
+    const otpRow = r.rows[0];
+    if (!otpRow || otpRow.code !== otp || new Date() > new Date(otpRow.expires_at))
+      return sendError(res, 'Code OTP invalide ou expiré.', 403);
+
+    await query('DELETE FROM otps WHERE identifier = $1', ['login:' + email]);
     const token = jwt.sign({ uid: user.uid, email: user.email }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
     const { password: _, ...u } = user;
     res.json({ success: true, token, user: u });
