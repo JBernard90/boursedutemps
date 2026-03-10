@@ -75,19 +75,28 @@ const Navbar: React.FC<NavbarProps> = ({ currentPage, user, onNavigate, onLogin,
             
             <div className="ml-4 pl-4 border-l border-slate-100 flex items-center gap-3">
               {user ? (
-                <button 
-                  onClick={() => onNavigate('profile')}
-                  className="flex items-center gap-2 bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full transition hover:bg-blue-100 border border-blue-200"
-                >
-                  <span className="text-sm font-bold">⏰ {user.credits}</span>
-                  <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
-                    {user.avatar ? (
-                      <img src={user.avatar} className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-[10px] text-white font-bold">{user.firstName[0]}</span>
-                    )}
-                  </div>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => onNavigate('profile')}
+                    className="flex items-center gap-2 bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full transition hover:bg-blue-100 border border-blue-200"
+                  >
+                    <span className="text-sm font-bold">⏰ {user.credits}</span>
+                    <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm">
+                      {user.avatar ? (
+                        <img src={user.avatar} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-[10px] text-white font-bold">{user.firstName[0]}</span>
+                      )}
+                    </div>
+                  </button>
+                  <button
+                    onClick={onLogout}
+                    className="text-xs text-slate-400 hover:text-red-500 transition px-2 py-1 rounded-lg hover:bg-red-50"
+                    title="Se déconnecter"
+                  >
+                    🚪
+                  </button>
+                </div>
               ) : (
                 <button 
                   onClick={onLogin}
@@ -125,12 +134,20 @@ const Navbar: React.FC<NavbarProps> = ({ currentPage, user, onNavigate, onLogin,
           ))}
           <div className="pt-4 mt-4 border-t border-slate-100">
             {user ? (
-              <button 
-                onClick={() => { onNavigate('profile'); setIsOpen(false); }}
-                className="w-full bg-blue-50 text-blue-600 py-3 rounded-xl font-bold"
-              >
-                Mon Profil (⏰ {user.credits})
-              </button>
+              <div className="space-y-2">
+                <button 
+                  onClick={() => { onNavigate('profile'); setIsOpen(false); }}
+                  className="w-full bg-blue-50 text-blue-600 py-3 rounded-xl font-bold"
+                >
+                  Mon Profil (⏰ {user.credits})
+                </button>
+                <button
+                  onClick={() => { onLogout(); setIsOpen(false); }}
+                  className="w-full bg-red-50 text-red-500 py-3 rounded-xl font-bold"
+                >
+                  🚪 Se déconnecter
+                </button>
+              </div>
             ) : (
               <button 
                 onClick={() => { onLogin(); setIsOpen(false); }}
