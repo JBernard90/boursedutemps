@@ -111,6 +111,7 @@ const initDB = async () => {
       author_id VARCHAR(255),
       author_name VARCHAR(255),
       author_avatar VARCHAR(255),
+      title VARCHAR(255),
       content TEXT NOT NULL,
       rating INTEGER NOT NULL,
       media JSONB DEFAULT '[]',
@@ -127,7 +128,8 @@ const initDB = async () => {
       author_name VARCHAR(255),
       author_avatar VARCHAR(255),
       title VARCHAR(255) NOT NULL,
-      content TEXT NOT NULL,
+      content TEXT,
+      message TEXT,
       category VARCHAR(255),
       media JSONB DEFAULT '[]',
       likes TEXT[] DEFAULT '{}',
@@ -162,6 +164,16 @@ const initDB = async () => {
       await client.query(sql);
     }
     console.log('[DB] Tables initialisees');
+    // Migrations - ajout colonnes manquantes sur tables existantes
+    const migrations = [
+      "ALTER TABLE testimonials ADD COLUMN IF NOT EXISTS title VARCHAR(255)",
+      "ALTER TABLE forum_topics ADD COLUMN IF NOT EXISTS message TEXT",
+      "ALTER TABLE blogs ADD COLUMN IF NOT EXISTS external_link VARCHAR(255)"
+    ];
+    for (const sql of migrations) {
+      await client.query(sql).catch(function(e) { console.log('[DB] Migration skip:', e.message); });
+    }
+    console.log('[DB] Migrations OK');
   } catch (err) {
     console.error('[DB] Erreur init:', err && err.message);
   } finally {
