@@ -447,6 +447,8 @@ const App: React.FC = () => {
   const [helpType, setHelpType] = useState<'Aide' | 'Signalement'>('Aide');
   const [helpSubject, setHelpSubject] = useState('');
   const [helpMessage, setHelpMessage] = useState('');
+  const [helpEmail, setHelpEmail] = useState('');
+  const [helpPhone, setHelpPhone] = useState('');
 
   useEffect(() => {
     // Auth Listener
@@ -593,9 +595,23 @@ const App: React.FC = () => {
     }
   };
 
-  const handleHelpSubmit = (e: React.FormEvent) => {
+  const handleHelpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    alert(`Merci ! Votre demande (${helpType} : ${helpSubject}) a été transmise à l'administrateur. Nous reviendrons vers vous rapidement sur ${user?.email || 'votre email'}.`);
+    try {
+      const res = await fetch('/api/help', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: helpType, subject: helpSubject, message: helpMessage, email: helpEmail, phone: helpPhone })
+      });
+      if (res.ok) {
+        alert('Merci ! Votre demande a été transmise à l\'administrateur.');
+        setShowHelpModal(false);
+        setHelpSubject('');
+        setHelpMessage('');
+        setHelpEmail('');
+        setHelpPhone('');
+      } else { alert('Erreur lors de l\'envoi. Réessayez.'); }
+    } catch { alert('Erreur réseau. Réessayez.'); }
     setShowHelpModal(false);
     setHelpSubject('');
     setHelpMessage('');
@@ -749,6 +765,16 @@ const App: React.FC = () => {
                     Signalement
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Votre Email</label>
+                <input required type="email" placeholder="votre@email.com" className="w-full px-5 py-3 rounded-xl bg-slate-50 border border-slate-100 outline-none focus:ring-2 focus:ring-blue-500" value={helpEmail} onChange={e => setHelpEmail(e.target.value)} />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Votre Numéro WhatsApp</label>
+                <input required type="tel" placeholder="+221..." className="w-full px-5 py-3 rounded-xl bg-slate-50 border border-slate-100 outline-none focus:ring-2 focus:ring-blue-500" value={helpPhone} onChange={e => setHelpPhone(e.target.value)} />
               </div>
 
               <div>
