@@ -311,8 +311,8 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// ─── LOGIN ────────────────────────────────────────────────────────────────
-app.post('/api/login', async (req, res) => {
+// ─── LOGIN INIT (envoie OTP) ──────────────────────────────────────────────
+app.post('/api/login/init', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return sendError(res, 'Email et mot de passe requis.', 400);
   try {
@@ -321,6 +321,46 @@ app.post('/api/login', async (req, res) => {
     const user = result.rows[0];
     if (!await bcrypt.compare(password, user.password))
       return sendError(res, 'Email ou mot de passe incorrect.', 401);
+
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await query('DELETE FROM otps WHERE identifier = $1', ['login:' + email]);
+    await query('INSERT INTO otps (identifier, code, expires_at) VALUES ($1, $2, $3)', ['login:' + email, otp, expiresAt]);
+
+    transporter.sendMail({
+      from: '"Bourse du Temps" <' + process.env.EMAIL_USER + '>',
+      to: email,
+      subject: 'Code de connexion – Bourse du Temps',
+      html: '<div style="font-family:sans-serif;padding:20px;max-width:500px;margin:0 auto;border:1px solid #eee;border-radius:10px;"><h2 style="color:#1e40af;">Code de connexion</h2><p>Votre code (valable 10 minutes) :</p><div style="background:#f3f4f6;padding:15px;text-align:center;border-radius:8px;margin:20px 0;"><strong style="font-size:32px;letter-spacing:4px;color:#1f2937;">' + otp + '</strong></div></div>',
+    }).catch(function(e) { console.log('[DEV] Login OTP ' + email + ': ' + otp); });
+
+    res.json({ success: true, message: 'Code envoyé par email.' });
+  } catch (err) {
+    console.error('[login/init]', err);
+    sendError(res, 'Erreur de connexion.');
+  }
+});
+
+// ─── LOGIN ────────────────────────────────────────────────────────────────
+app.post('/api/login', async (req, res) => {
+  const { email, password, otp } = req.body;
+  if (!email || !password) return sendError(res, 'Email et mot de passe requis.', 400);
+  try {
+    const result = await query('SELECT * FROM users WHERE email = $1', [email]);
+    if (!result.rows.length) return sendError(res, 'Email ou mot de passe incorrect.', 401);
+    const user = result.rows[0];
+    if (!await bcrypt.compare(password, user.password))
+      return sendError(res, 'Email ou mot de passe incorrect.', 401);
+
+    // Si OTP fourni, vérifier
+    if (otp) {
+      const otpResult = await query('SELECT * FROM otps WHERE identifier = $1 ORDER BY created_at DESC LIMIT 1', ['login:' + email]);
+      const otpRow = otpResult.rows[0];
+      if (!otpRow || otpRow.code !== otp || new Date() > new Date(otpRow.expires_at))
+        return sendError(res, 'Code OTP invalide ou expiré.', 401);
+      await query('DELETE FROM otps WHERE identifier = $1', ['login:' + email]);
+    }
+
     const token = jwt.sign({ uid: user.uid, email: user.email }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '7d' });
     const { password: _, ...u } = user;
     res.json({ success: true, token, user: u });
