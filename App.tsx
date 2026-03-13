@@ -388,7 +388,22 @@ const INITIAL_BLOGS: BlogPost[] = [
 const INITIAL_TESTIMONIALS: Testimonial[] = [];
 
 const App: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<Page>('home');
+  const [currentPage, setCurrentPageState] = useState<Page>('home');
+
+  const setCurrentPage = (page: Page) => {
+    window.history.pushState({ page }, '', '/' + (page === 'home' ? '' : page));
+    setCurrentPageState(page);
+  };
+
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      const page = (e.state?.page as Page) || 'home';
+      setCurrentPageState(page);
+    };
+    window.history.replaceState({ page: 'home' }, '', '/');
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [services, setServices] = useState<Service[]>([]);
