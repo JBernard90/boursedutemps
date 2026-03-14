@@ -48,7 +48,7 @@ const Testimonials: React.FC<TestimonialsProps> = ({ testimonials, user, onAuthC
       setMediaData(url);
       setMediaType(file.type.startsWith('video') ? 'video' : 'image');
     } catch (err) {
-      alert('Erreur lors de l'upload du fichier. Réessayez.');
+      alert("Erreur lors de l'upload du fichier. Réessayez.");
       setMediaData(null);
     }
   };

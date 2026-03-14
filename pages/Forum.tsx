@@ -47,7 +47,7 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
       setMediaData(url);
       setMediaType(file.type.startsWith('video') ? 'video' : 'image');
     } catch (err) {
-      alert('Erreur lors de l'upload du fichier. Réessayez.');
+      alert("Erreur lors de l'upload du fichier. Réessayez.");
       setMediaData(null);
     }
   };
