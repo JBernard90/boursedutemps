@@ -17,8 +17,8 @@ const Blog: React.FC<BlogProps> = ({ blogs, user, onUpdate, onAuthClick }) => {
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState('Expérience');
-  const [mediaData, setMediaData] = useState<string | null>(null);
-  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [externalLink, setExternalLink] = useState('');
   const [videoLink, setVideoLink] = useState('');
   const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
@@ -49,8 +49,7 @@ const Blog: React.FC<BlogProps> = ({ blogs, user, onUpdate, onAuthClick }) => {
     if (!user) return;
     const token = localStorage.getItem('token');
     // Construire la liste media : image base64 + lien vidéo YouTube/Drive
-    const media: MediaItem[] = [];
-    if (mediaData && mediaType === 'image') media.push({ type: 'image', url: mediaData });
+    const media: MediaItem[] = [...mediaItems];
     if (videoLink.trim()) media.push({ type: 'video', url: videoLink.trim() });
 
     const postData = {
@@ -101,7 +100,7 @@ const Blog: React.FC<BlogProps> = ({ blogs, user, onUpdate, onAuthClick }) => {
   const resetForm = () => {
     setNewTitle('');
     setNewContent('');
-    setMediaData(null);
+    setMediaItems([]);
     setExternalLink('');
     setCommentText('');
     setVideoLink('');
@@ -213,7 +212,7 @@ const Blog: React.FC<BlogProps> = ({ blogs, user, onUpdate, onAuthClick }) => {
                   onClick={() => fileInputRef.current?.click()}
                   className="w-full px-5 py-4 rounded-2xl bg-slate-100 border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-200 transition flex items-center justify-center gap-2"
                 >
-                  {mediaData === "loading" ? "⏳ Chargement..." : mediaData ? mediaType === "video" ? "✅ Vidéo prête" : "✅ Photo prête" : "📁 Importer Photo/Vidéo"}
+                  {uploadingMedia ? "⏳ Chargement..." : mediaItems.length > 0 ? `✅ ${mediaItems.length} fichier(s) prêt(s)` : "📁 Importer Photos/Vidéos"}
                 </button>
               </div>
             </div>
@@ -229,14 +228,18 @@ const Blog: React.FC<BlogProps> = ({ blogs, user, onUpdate, onAuthClick }) => {
               <p className="text-[10px] text-slate-400 mt-1 px-2">Exemple : https://www.youtube.com/watch?v=...</p>
             </div>
 
-            {mediaData && (
-              <div className="rounded-2xl overflow-hidden border border-slate-100 bg-slate-50 p-2">
-                {mediaType === 'image' ? (
-                  <img src={mediaData} className="w-full h-40 object-cover rounded-xl" alt="Preview" />
-                ) : (
-                  <video src={mediaData} className="w-full h-40 object-cover rounded-xl" />
-                )}
-                <button type="button" onClick={() => setMediaData(null)} className="text-xs text-red-500 font-bold p-2 hover:underline">Supprimer le fichier</button>
+            {mediaItems.length > 0 && (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {mediaItems.map((m, i) => (
+                  <div key={i} className="relative">
+                    {m.type === 'image' ? (
+                      <img src={m.url} className="w-full h-24 object-cover rounded-xl" alt="Preview" />
+                    ) : (
+                      <video src={m.url} className="w-full h-24 object-cover rounded-xl" />
+                    )}
+                    <button type="button" onClick={() => setMediaItems(prev => prev.filter((_, j) => j !== i))} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">×</button>
+                  </div>
+                ))}
               </div>
             )}
             
@@ -264,7 +267,7 @@ const Blog: React.FC<BlogProps> = ({ blogs, user, onUpdate, onAuthClick }) => {
                 </div>
                 {user && (user.uid === blog.authorId || user.role === 'admin') && (
                   <div className="flex gap-2">
-                    <button onClick={() => { setEditingPost(blog); setNewTitle(blog.title); setNewContent(blog.content); setNewCategory(blog.category); if (blog.media.length > 0) { setMediaData(blog.media[0].url); setMediaType(blog.media[0].type); } setShowAdd(true); }} className="p-2 text-slate-400 hover:text-blue-600 transition">
+                    <button onClick={() => { setEditingPost(blog); setNewTitle(blog.title); setNewContent(blog.content); setNewCategory(blog.category); if (blog.media.length > 0) { setMediaItems(blog.media); } setShowAdd(true); }} className="p-2 text-slate-400 hover:text-blue-600 transition">
                       <Edit2 size={18} />
                     </button>
                     <button onClick={() => handleDelete(blog.id)} className="p-2 text-slate-400 hover:text-red-600 transition">
@@ -278,21 +281,18 @@ const Blog: React.FC<BlogProps> = ({ blogs, user, onUpdate, onAuthClick }) => {
               <p className="text-slate-600 leading-relaxed mb-6 whitespace-pre-wrap">{blog.content}</p>
               
               {blog.media.length > 0 && (
-                <div className="rounded-3xl overflow-hidden mb-6 bg-slate-50 border border-slate-100">
-                  {blog.media[0].type === 'image' ? (
-                    <img src={blog.media[0].url} className="w-full h-auto max-h-[500px] object-cover" alt="Media" />
-                  ) : blog.media[0].url.includes('youtube.com') || blog.media[0].url.includes('youtu.be') ? (
-                    <iframe
-                      src={blog.media[0].url.replace('watch?v=', 'embed/').replace('youtu.be/', 'www.youtube.com/embed/')}
-                      className="w-full aspect-video rounded-2xl"
-                      allowFullScreen
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    />
-                  ) : (
-                    <a href={blog.media[0].url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 text-blue-600 font-bold hover:underline">
-                      🎬 Voir la vidéo
-                    </a>
-                  )}
+                <div className={`mb-6 grid gap-2 ${blog.media.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                  {blog.media.map((m, i) => (
+                    <div key={i} className="rounded-2xl overflow-hidden bg-slate-50 border border-slate-100">
+                      {m.type === 'image' ? (
+                        <img src={m.url} className="w-full h-auto max-h-[400px] object-cover" alt="Media" />
+                      ) : m.url.includes('youtube.com') || m.url.includes('youtu.be') ? (
+                        <iframe src={m.url.replace('watch?v=', 'embed/').replace('youtu.be/', 'www.youtube.com/embed/')} className="w-full aspect-video" allowFullScreen allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" />
+                      ) : (
+                        <video src={m.url} controls className="w-full max-h-[400px]" />
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 

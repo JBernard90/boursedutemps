@@ -15,8 +15,8 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
   const [editingPost, setEditingPost] = useState<ForumTopic | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [newMsg, setNewMsg] = useState('');
-  const [mediaData, setMediaData] = useState<string | null>(null);
-  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const [externalLink, setExternalLink] = useState('');
   const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
@@ -26,10 +26,12 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
   const uploadToCloudinary = async (file: File): Promise<string> => {
     const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
     const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+    const isVideo = file.type.startsWith('video');
+    const resourceType = isVideo ? 'video' : 'image';
     const formData = new FormData();
     formData.append('file', file);
     formData.append('upload_preset', uploadPreset);
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/upload`, {
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`, {
       method: 'POST',
       body: formData,
     });
@@ -39,16 +41,20 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setMediaData('loading');
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploadingMedia(true);
     try {
-      const url = await uploadToCloudinary(file);
-      setMediaData(url);
-      setMediaType(file.type.startsWith('video') ? 'video' : 'image');
+      const uploaded: MediaItem[] = [];
+      for (const file of files) {
+        const url = await uploadToCloudinary(file);
+        uploaded.push({ type: file.type.startsWith('video') ? 'video' : 'image', url });
+      }
+      setMediaItems(prev => [...prev, ...uploaded]);
     } catch (err) {
-      alert("Erreur lors de l'upload du fichier. Réessayez.");
-      setMediaData(null);
+      alert("Erreur lors de l'upload. Réessayez.");
+    } finally {
+      setUploadingMedia(false);
     }
   };
 
@@ -61,7 +67,7 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
     e.preventDefault();
     if (!user) return alert('Connectez-vous pour participer');
     
-    const media: MediaItem[] = mediaData ? [{ type: mediaType, url: mediaData }] : [];
+    const media: MediaItem[] = [...mediaItems];
     
     const postData = {
       title: newTitle,
@@ -89,7 +95,7 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
     setEditingPost(null);
     setNewTitle('');
     setNewMsg('');
-    setMediaData(null);
+    setMediaItems([]);
     setExternalLink('');
   };
 
@@ -161,21 +167,25 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
               <input type="url" placeholder="Lien externe (optionnel)" className="w-full px-5 py-4 rounded-2xl bg-slate-50 border border-slate-100 outline-none focus:ring-2 focus:ring-blue-500 transition" value={externalLink} onChange={e => setExternalLink(e.target.value)} />
               
               <div className="relative">
-                <input type="file" accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
+                <input type="file" accept="image/*,video/*" multiple className="hidden" ref={fileInputRef} onChange={handleFileChange} />
                 <button type="button" onClick={() => fileInputRef.current?.click()} className="w-full px-5 py-4 rounded-2xl bg-slate-100 border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-200 transition flex items-center justify-center gap-2 h-full">
-                  {mediaData === "loading" ? "⏳ Chargement..." : mediaData ? mediaType === "video" ? "✅ Vidéo prête" : "✅ Photo prête" : "📁 Importer Photo/Vidéo"}
+                  {uploadingMedia ? "⏳ Chargement..." : mediaItems.length > 0 ? `✅ ${mediaItems.length} fichier(s) prêt(s)` : "📁 Importer Photos/Vidéos"}
                 </button>
               </div>
             </div>
 
-            {mediaData && (
-              <div className="rounded-2xl overflow-hidden border border-slate-100 bg-slate-50 p-2">
-                {mediaType === 'image' ? (
-                  <img src={mediaData} className="w-full h-40 object-cover rounded-xl" alt="Preview" />
-                ) : (
-                  <video src={mediaData} className="w-full h-40 object-cover rounded-xl" />
-                )}
-                <button type="button" onClick={() => setMediaData(null)} className="text-xs text-red-500 font-bold p-2 hover:underline">Supprimer le fichier</button>
+            {mediaItems.length > 0 && (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {mediaItems.map((m, i) => (
+                  <div key={i} className="relative">
+                    {m.type === 'image' ? (
+                      <img src={m.url} className="w-full h-24 object-cover rounded-xl" alt="Preview" />
+                    ) : (
+                      <video src={m.url} className="w-full h-24 object-cover rounded-xl" />
+                    )}
+                    <button type="button" onClick={() => setMediaItems(prev => prev.filter((_, j) => j !== i))} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">×</button>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -193,7 +203,7 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
             
             {user && (user.uid === topic.authorId || user.role === 'admin') && (
               <div className="absolute top-4 right-4 flex gap-2">
-                <button onClick={() => { setEditingPost(topic); setNewTitle(topic.title); setNewMsg(topic.message); setExternalLink(topic.externalLink || ''); if (topic.media && topic.media.length > 0) { setMediaData(topic.media[0].url); setMediaType(topic.media[0].type); } setShowAdd(true); }} className="p-2 text-slate-400 hover:text-blue-600 transition bg-white/80 backdrop-blur-sm rounded-full">
+                <button onClick={() => { setEditingPost(topic); setNewTitle(topic.title); setNewMsg(topic.message); setExternalLink(topic.externalLink || ''); if (topic.media && topic.media.length > 0) { setMediaItems(topic.media); } setShowAdd(true); }} className="p-2 text-slate-400 hover:text-blue-600 transition bg-white/80 backdrop-blur-sm rounded-full">
                   <Edit2 size={16} />
                 </button>
                 <button onClick={() => handleDelete(topic.id)} className="p-2 text-slate-400 hover:text-red-600 transition bg-white/80 backdrop-blur-sm rounded-full">
@@ -217,12 +227,16 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
                 )}
 
                 {topic.media && topic.media.length > 0 && (
-                  <div className="rounded-2xl overflow-hidden mb-4 bg-slate-50 border border-slate-100">
-                    {topic.media[0].type === 'image' ? (
-                      <img src={topic.media[0].url} className="w-full h-auto max-h-[300px] object-cover" alt="Media" />
-                    ) : (
-                      <video src={topic.media[0].url} controls className="w-full h-auto max-h-[300px]" />
-                    )}
+                  <div className={`mb-4 grid gap-2 ${topic.media.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                    {topic.media.map((m, i) => (
+                      <div key={i} className="rounded-2xl overflow-hidden bg-slate-50 border border-slate-100">
+                        {m.type === 'image' ? (
+                          <img src={m.url} className="w-full h-auto max-h-[300px] object-cover" alt="Media" />
+                        ) : (
+                          <video src={m.url} controls className="w-full max-h-[300px]" />
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
 
