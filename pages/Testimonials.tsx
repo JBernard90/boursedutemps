@@ -149,7 +149,7 @@ const Testimonials: React.FC<TestimonialsProps> = ({ testimonials, user, onAuthC
             setEditingPost(null);
             setNewTitle('');
             setNewContent('');
-            setMediaData(null);
+            setMediaItems([]);
             setNewRating(5);
             setShowAdd(true);
           }}

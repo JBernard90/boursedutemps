@@ -25,16 +25,22 @@ const Blog: React.FC<BlogProps> = ({ blogs, user, onUpdate, onAuthClick }) => {
   const [commentText, setCommentText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setMediaData(reader.result as string);
-      setMediaType(file.type.startsWith('video') ? 'video' : 'image');
-    };
-    reader.readAsDataURL(file);
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploadingMedia(true);
+    try {
+      const uploaded: MediaItem[] = [];
+      for (const file of files) {
+        const url = await uploadToCloudinary(file);
+        uploaded.push({ type: file.type.startsWith('video') ? 'video' : 'image', url });
+      }
+      setMediaItems(prev => [...prev, ...uploaded]);
+    } catch (err) {
+      alert("Erreur lors de l'upload. Réessayez.");
+    } finally {
+      setUploadingMedia(false);
+    }
   };
 
   const handleDelete = async (id: string) => {

@@ -146,7 +146,7 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
             setEditingPost(null);
             setNewTitle('');
             setNewMsg('');
-            setMediaData(null);
+            setMediaItems([]);
             setExternalLink('');
             setShowAdd(true);
           }}
