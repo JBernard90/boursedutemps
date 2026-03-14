@@ -437,6 +437,31 @@ tables.forEach(function(table) {
   });
 });
 
+// --- HELP / SUPPORT ADMIN ---------------------------------------------------
+app.post('/api/help', async function(req, res) {
+  const { type, subject, message, email, phone } = req.body;
+  if (!email || !phone || !subject || !message) return sendError(res, 'Tous les champs sont requis.', 400);
+  try {
+    await transporter.sendMail({
+      from: '"Bourse du Temps" <' + process.env.EMAIL_USER + '>',
+      to: process.env.EMAIL_USER,
+      subject: '[SUPPORT ' + (type||'') + '] ' + subject,
+      html: '<div style="font-family:sans-serif;padding:20px;">' +
+        '<h2 style="color:#1e40af;">Nouveau message Support Admin</h2>' +
+        '<p><b>Type:</b> ' + (type||'') + '</p>' +
+        '<p><b>Email:</b> ' + email + '</p>' +
+        '<p><b>Téléphone:</b> ' + phone + '</p>' +
+        '<p><b>Objet:</b> ' + subject + '</p>' +
+        '<p><b>Message:</b></p><p>' + message + '</p>' +
+        '</div>'
+    });
+    res.json({ success: true });
+  } catch(e) {
+    console.error('[help]', e);
+    sendError(res, 'Erreur envoi email: ' + e.message);
+  }
+});
+
 // --- 404 + ERROR ----------------------------------------------------------
 app.use('/api/*', function(req, res) {
   res.status(404).json({ error: 'Route ' + req.originalUrl + ' introuvable', success: false });
