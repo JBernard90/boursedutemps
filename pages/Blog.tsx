@@ -19,22 +19,30 @@ const Blog: React.FC<BlogProps> = ({ blogs, user, onUpdate, onAuthClick }) => {
   const [newCategory, setNewCategory] = useState('Expérience');
   const [mediaData, setMediaData] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const [externalLink, setExternalLink] = useState('');
   const [videoLink, setVideoLink] = useState('');
   const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setMediaData(reader.result as string);
-      setMediaType(file.type.startsWith('video') ? 'video' : 'image');
-    };
-    reader.readAsDataURL(file);
+    setUploading(true);
+    setUploadProgress('Envoi en cours...');
+    try {
+      const result = await uploadToCloudinary(file);
+      setMediaData(result.url);
+      setMediaType(result.type);
+      setUploadProgress('✅ Fichier prêt !');
+    } catch (err) {
+      alert('Erreur upload. Vérifiez votre connexion.');
+      setUploadProgress('');
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleDelete = async (id: string) => {

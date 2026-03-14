@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { User, ForumTopic, MediaItem } from '../types';
-import { db, doc, updateDoc, deleteDoc, addDoc, collection } from '../api';
+import { uploadToCloudinary } from '../cloudinary';
 import { Edit2, Trash2, MessageCircle, Heart, Share2 } from 'lucide-react';
 
 interface ForumProps {
@@ -17,98 +17,100 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
   const [newMsg, setNewMsg] = useState('');
   const [mediaData, setMediaData] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
+  const [uploading, setUploading] = useState(false);
   const [externalLink, setExternalLink] = useState('');
   const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setMediaData(reader.result as string);
-      setMediaType(file.type.startsWith('video') ? 'video' : 'image');
-    };
-    reader.readAsDataURL(file);
+    setUploading(true);
+    try {
+      const result = await uploadToCloudinary(file);
+      setMediaData(result.url);
+      setMediaType(result.type);
+    } catch { alert('Erreur upload. Vérifiez votre connexion.'); }
+    finally { setUploading(false); }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Supprimer définitivement ce sujet ?")) return;
-    await deleteDoc(doc(db, 'forumTopics', id));
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/forumTopics/' + id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+    if (res.ok) window.location.reload();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return alert('Connectez-vous pour participer');
-    
+    const token = localStorage.getItem('token');
     const media: MediaItem[] = mediaData ? [{ type: mediaType, url: mediaData }] : [];
-    
     const postData = {
-      title: newTitle,
-      message: newMsg,
-      media: media,
-      externalLink: externalLink,
+      title: newTitle, message: newMsg, media, externalLink,
+      authorId: user.uid, authorName: user.firstName + ' ' + user.lastName,
+      authorAvatar: user.avatar, likes: [], shares: 0, comments: [],
     };
-
     if (editingPost) {
-      await updateDoc(doc(db, 'forumTopics', editingPost.id), postData);
-    } else {
-      await addDoc(collection(db, 'forumTopics'), {
-        ...postData,
-        authorId: user.uid,
-        authorName: `${user.firstName} ${user.lastName}`,
-        authorAvatar: user.avatar,
-        likes: [],
-        shares: 0,
-        comments: [],
-        createdAt: new Date().toISOString(),
+      await fetch('/api/forumTopics/' + editingPost.id, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify(postData),
       });
+    } else {
+      const res = await fetch('/api/forumTopics', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify(postData),
+      });
+      if (!res.ok) { const err = await res.json(); alert('Erreur : ' + (err.error || 'Impossible de publier')); return; }
     }
-
-    setShowAdd(false);
-    setEditingPost(null);
-    setNewTitle('');
-    setNewMsg('');
-    setMediaData(null);
-    setExternalLink('');
+    setShowAdd(false); setEditingPost(null);
+    setNewTitle(''); setNewMsg(''); setMediaData(null); setExternalLink('');
+    window.location.reload();
   };
 
   const handleLike = async (t: ForumTopic) => {
     if (!user) return alert('Connectez-vous pour participer');
+    const token = localStorage.getItem('token');
     const likes = t.likes || [];
     const hasLiked = likes.includes(user.uid);
     const newLikes = hasLiked ? likes.filter(id => id !== user.uid) : [...likes, user.uid];
-    await updateDoc(doc(db, 'forumTopics', t.id), { likes: newLikes });
+    await fetch('/api/forumTopics/' + t.id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ likes: newLikes }),
+    });
   };
 
   const handleShare = async (t: ForumTopic) => {
+    const token = localStorage.getItem('token');
     if (navigator.share) {
-      try {
-        await navigator.share({ title: t.title, text: t.message, url: window.location.href });
-        await updateDoc(doc(db, 'forumTopics', t.id), { shares: (t.shares || 0) + 1 });
-      } catch (err) { console.error("Erreur de partage:", err); }
+      try { await navigator.share({ title: t.title, text: t.message, url: window.location.href }); }
+      catch (err) { console.error("Erreur de partage:", err); }
     } else {
       navigator.clipboard.writeText(window.location.href);
       alert("Lien copié dans le presse-papier !");
-      await updateDoc(doc(db, 'forumTopics', t.id), { shares: (t.shares || 0) + 1 });
     }
+    await fetch('/api/forumTopics/' + t.id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ shares: (t.shares || 0) + 1 }),
+    });
   };
 
   const handleComment = async (t: ForumTopic) => {
     if (!user) return alert('Connectez-vous pour participer');
     if (!commentText.trim()) return;
+    const token = localStorage.getItem('token');
     const newComment = {
       id: Math.random().toString(36).substr(2, 9),
-      authorId: user.uid,
-      authorName: `${user.firstName} ${user.lastName}`,
-      authorAvatar: user.avatar,
-      content: commentText,
-      createdAt: new Date().toISOString()
+      authorId: user.uid, authorName: user.firstName + ' ' + user.lastName,
+      authorAvatar: user.avatar, content: commentText, createdAt: new Date().toISOString()
     };
-    await updateDoc(doc(db, 'forumTopics', t.id), { comments: [...(t.comments || []), newComment] });
-    setCommentText('');
-    setActiveCommentPost(null);
+    const newComments = [...(t.comments || []), newComment];
+    await fetch('/api/forumTopics/' + t.id, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ comments: newComments }),
+    });
+    setCommentText(''); setActiveCommentPost(null);
   };
 
   return (
@@ -144,7 +146,7 @@ const Forum: React.FC<ForumProps> = ({ user, topics }) => {
               <div className="relative">
                 <input type="file" accept="image/*,video/*" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
                 <button type="button" onClick={() => fileInputRef.current?.click()} className="w-full px-5 py-4 rounded-2xl bg-slate-100 border border-slate-200 text-sm font-bold text-slate-600 hover:bg-slate-200 transition flex items-center justify-center gap-2 h-full">
-                  {mediaData ? "✅ Fichier prêt" : "📁 Importer Photo/Vidéo"}
+                  {uploading ? "⏳ Envoi en cours..." : mediaData ? "✅ Fichier prêt" : "📁 Importer Photo/Vidéo"}
                 </button>
               </div>
             </div>
