@@ -127,7 +127,7 @@ const Profile: React.FC<ProfileProps> = ({
         </div>
 
         {readOnly && (!currentUser || currentUser.uid !== user.uid) && (
-          <div className="px-4 sm:px-10 py-4 flex flex-wrap gap-3 border-b border-slate-100 bg-white">
+          <div className="px-4 sm:px-10 py-4 flex flex-wrap gap-3 border-b border-slate-200 bg-slate-50">
             {(!currentUser || !connection) && (
               <button onClick={() => onSendConnection?.(user.uid)} className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition text-sm">
                 + Se connecter
@@ -402,4 +402,5 @@ const Profile: React.FC<ProfileProps> = ({
 };
 
 export default Profile;
+
 
