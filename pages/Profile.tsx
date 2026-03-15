@@ -242,6 +242,26 @@ const Profile: React.FC<ProfileProps> = ({
                       </div>
                     </section>
 
+                    {connection?.status === 'accepted' && (
+                      <section>
+                        <h3 className="font-heading text-lg font-bold text-slate-800 mb-4">Contact</h3>
+                        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 space-y-3">
+                          {user.email && (
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl">📧</span>
+                              <a href={`mailto:${user.email}`} className="text-blue-600 font-bold text-sm hover:underline">{user.email}</a>
+                            </div>
+                          )}
+                          {user.phone && (
+                            <div className="flex items-center gap-3">
+                              <span className="text-xl">📱</span>
+                              <a href={`https://wa.me/${user.phone.replace(/[^0-9]/g,'')}`} target="_blank" rel="noopener noreferrer" className="text-green-600 font-bold text-sm hover:underline">{user.phone}</a>
+                            </div>
+                          )}
+                        </div>
+                      </section>
+                    )}
+
                     <section>
                       <h3 className="font-heading text-lg font-bold text-slate-800 mb-4">Échanges Récents</h3>
                       {userTransactions.length === 0 ? (
