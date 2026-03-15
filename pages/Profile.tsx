@@ -119,38 +119,38 @@ const Profile: React.FC<ProfileProps> = ({
             </div>
           </div>
           
-          {readOnly && (!currentUser || currentUser.uid !== user.uid) && (
-            <div className="relative z-10 flex gap-4">
-              {(!connection || !currentUser) && (
-                <button onClick={() => onSendConnection?.(user.uid)} className="bg-blue-600 text-white px-3 sm:px-6 py-2 sm:py-3 rounded-xl sm:rounded-2xl font-bold shadow-lg hover:bg-blue-700 transition text-xs sm:text-sm">
-                  Se connecter
-                </button>
-              )}
-              {currentUser && connection?.status === 'sent' && connection.senderId === currentUser.uid && (
-                <button onClick={() => onUpdateConnection?.(connection.id, 'cancelled')} className="bg-slate-700 text-white px-3 sm:px-6 py-2 sm:py-3 rounded-xl sm:rounded-2xl font-bold transition text-xs sm:text-sm">
-                  Annuler la demande
-                </button>
-              )}
-              {currentUser && connection?.status === 'sent' && connection.receiverId === currentUser.uid && (
-                <div className="flex gap-2">
-                  <button onClick={() => onUpdateConnection?.(connection.id, 'accepted')} className="bg-green-600 text-white px-3 sm:px-4 py-2 sm:py-3 rounded-xl font-bold transition text-xs sm:text-sm">Accepter</button>
-                  <button onClick={() => onUpdateConnection?.(connection.id, 'refused')} className="bg-red-600 text-white px-3 sm:px-4 py-2 sm:py-3 rounded-xl font-bold transition text-xs sm:text-sm">Refuser</button>
-                </div>
-              )}
-              {connection?.status === 'accepted' && (
-                <span className="bg-green-500/20 backdrop-blur-md text-green-100 px-3 sm:px-6 py-2 sm:py-3 rounded-xl sm:rounded-2xl font-bold border border-green-500/30 text-xs sm:text-sm">
-                  ✅ Connecté
-                </span>
-              )}
-            </div>
-          )}
-
           {!readOnly && (
             <button onClick={() => setIsEditing(true)} className="bg-white/20 hover:bg-white/30 backdrop-blur-md text-white px-3 sm:px-6 py-2 sm:py-3 rounded-xl sm:rounded-2xl font-bold transition border border-white/30 relative z-10 text-xs sm:text-sm">
               Modifier
             </button>
           )}
         </div>
+
+        {readOnly && (!currentUser || currentUser.uid !== user.uid) && (
+          <div className="px-4 sm:px-10 pt-16 sm:pt-20 pb-2 flex flex-wrap gap-3">
+            {(!currentUser || !connection) && (
+              <button onClick={() => onSendConnection?.(user.uid)} className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition text-sm">
+                + Se connecter
+              </button>
+            )}
+            {currentUser && connection?.status === 'sent' && connection.senderId === currentUser.uid && (
+              <button onClick={() => onUpdateConnection?.(connection.id, 'cancelled')} className="bg-slate-200 text-slate-700 px-6 py-2.5 rounded-xl font-bold transition text-sm">
+                Demande envoyée · Annuler
+              </button>
+            )}
+            {currentUser && connection?.status === 'sent' && connection.receiverId === currentUser.uid && (
+              <div className="flex gap-2">
+                <button onClick={() => onUpdateConnection?.(connection.id, 'accepted')} className="bg-green-600 text-white px-5 py-2.5 rounded-xl font-bold transition text-sm">✓ Accepter</button>
+                <button onClick={() => onUpdateConnection?.(connection.id, 'refused')} className="bg-red-100 text-red-600 px-5 py-2.5 rounded-xl font-bold transition text-sm">✗ Refuser</button>
+              </div>
+            )}
+            {connection?.status === 'accepted' && (
+              <span className="bg-green-50 text-green-700 px-6 py-2.5 rounded-xl font-bold border border-green-200 text-sm">
+                ✅ Connecté
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Tabs */}
         {!readOnly && (
