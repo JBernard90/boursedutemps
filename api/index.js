@@ -364,7 +364,17 @@ const toCamel = function(obj) {
 };
 
 const toSnake = function(k) { return k.replace(/[A-Z]/g, function(l) { return '_' + l.toLowerCase(); }); };
-const serialize = function(v) { return (typeof v === 'object' && v !== null) ? JSON.stringify(v) : v; };
+const TEXT_ARRAY_COLS = ['likes', 'dislikes'];
+const serialize = function(v, colName) {
+  if (typeof v === 'object' && v !== null) {
+    const col = colName ? toSnake(colName) : '';
+    if (Array.isArray(v) && TEXT_ARRAY_COLS.includes(col)) {
+      return '{' + v.map(function(s) { return '"' + String(s).replace(/"/g, '\\"') + '"'; }).join(',') + '}';
+    }
+    return JSON.stringify(v);
+  }
+  return v;
+};
 
 tables.forEach(function(table) {
   const db = table === 'forumTopics' ? 'forum_topics' : table;
@@ -390,7 +400,7 @@ tables.forEach(function(table) {
       const keys = Object.keys(body);
       if (!keys.length) return sendError(res, 'Corps vide', 400);
       const cols = keys.map(toSnake).join(', ');
-      const vals = Object.values(body).map(serialize);
+      const vals = keys.map(function(k) { return serialize(body[k], k); });
       const ph = keys.map(function(_, i) { return '$' + (i+1); }).join(', ');
       const r = await query('INSERT INTO ' + db + ' (' + cols + ') VALUES (' + ph + ') RETURNING *', vals);
       res.status(201).json(toCamel(r.rows[0]));
@@ -402,7 +412,7 @@ tables.forEach(function(table) {
       const body = Object.assign({}, req.body);
       delete body.id; delete body.uid;
       const keys = Object.keys(body);
-      const vals = Object.values(body).map(serialize);
+      const vals = keys.map(function(k) { return serialize(body[k], k); });
       const existing = await query('SELECT ' + idCol + ' FROM ' + db + ' WHERE ' + idCol + ' = $1', [req.params.id]);
       if (existing.rows.length) {
         const set = keys.map(function(k,i) { return toSnake(k) + ' = $' + (i+1); }).join(', ');
@@ -422,7 +432,7 @@ tables.forEach(function(table) {
       delete body.id; delete body.uid;
       const keys = Object.keys(body);
       if (!keys.length) return res.json({ success: true });
-      const vals = Object.values(body).map(serialize);
+      const vals = keys.map(function(k) { return serialize(body[k], k); });
       const set = keys.map(function(k,i) { return toSnake(k) + ' = $' + (i+1); }).join(', ');
       const r = await query('UPDATE ' + db + ' SET ' + set + ' WHERE ' + idCol + ' = $' + (keys.length+1) + ' RETURNING *', vals.concat([req.params.id]));
       res.json(toCamel(r.rows[0]));
@@ -460,6 +470,18 @@ app.post('/api/help', async function(req, res) {
     console.error('[help]', e);
     sendError(res, 'Erreur envoi email: ' + e.message);
   }
+});
+
+
+// --- SET ADMIN ROLE -------------------------------------------------------
+app.post('/api/make-admin', async (req, res) => {
+  const { email, secret } = req.body;
+  if (secret !== 'BourseAdmin2026') return sendError(res, 'Non autorisé', 403);
+  try {
+    const r = await query("UPDATE users SET role = 'admin' WHERE email = $1 RETURNING uid, email, role", [email]);
+    if (!r.rows.length) return sendError(res, 'Utilisateur non trouvé', 404);
+    res.json({ success: true, user: r.rows[0] });
+  } catch (err) { sendError(res, err.message); }
 });
 
 // --- 404 + ERROR ----------------------------------------------------------
