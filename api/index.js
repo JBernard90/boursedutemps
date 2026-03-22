@@ -364,13 +364,21 @@ const toCamel = function(obj) {
 };
 
 const toSnake = function(k) { return k.replace(/[A-Z]/g, function(l) { return '_' + l.toLowerCase(); }); };
-const TEXT_ARRAY_COLS = ['likes', 'dislikes'];
+
+// Colonnes TEXT[] dans PostgreSQL (tableaux de strings simples)
+const TEXT_ARRAY_COLS = ['likes', 'dislikes', 'shares_list'];
+
+// Colonnes JSONB (tableaux d'objets complexes)
+const JSONB_COLS = ['media', 'comments', 'languages', 'offered_skills', 'requested_skills'];
+
 const serialize = function(v, colName) {
   if (typeof v === 'object' && v !== null) {
     const col = colName ? toSnake(colName) : '';
+    // TEXT[] : tableau de strings simples -> format PostgreSQL {val1,val2}
     if (Array.isArray(v) && TEXT_ARRAY_COLS.includes(col)) {
       return '{' + v.map(function(s) { return '"' + String(s).replace(/"/g, '\\"') + '"'; }).join(',') + '}';
     }
+    // JSONB : objets complexes -> JSON string
     return JSON.stringify(v);
   }
   return v;
@@ -473,7 +481,79 @@ app.post('/api/help', async function(req, res) {
 });
 
 
-// --- SET ADMIN ROLE -------------------------------------------------------
+// --- OPEN GRAPH SHARE PAGE ------------------------------------------------
+app.get('/share/blog/:id', async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM blogs WHERE id = $1', [req.params.id]);
+    if (!r.rows.length) return res.redirect('https://boursedutemps.vercel.app/blog');
+    const blog = r.rows[0];
+
+    const title = blog.title || 'Bourse du Temps';
+    const description = (blog.content || '').substring(0, 200).replace(/"/g, '&quot;') + '...';
+    const author = blog.author_name || 'Bourse du Temps';
+    const siteUrl = 'https://boursedutemps.vercel.app';
+    
+    // Get first image from media if available
+    let image = 'https://i.postimg.cc/5Y3Rg6zs/image-1.jpg';
+    try {
+      const media = typeof blog.media === 'string' ? JSON.parse(blog.media) : (blog.media || []);
+      const firstImage = media.find(m => m.type === 'image');
+      if (firstImage && firstImage.url) image = firstImage.url;
+    } catch(e) {}
+
+    const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${title} — Bourse du Temps</title>
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Bourse du Temps" />
+  <meta property="og:url" content="${siteUrl}/share/blog/${blog.id}" />
+  <meta property="og:title" content="${title}" />
+  <meta property="og:description" content="${description}" />
+  <meta property="og:image" content="${image}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:locale" content="fr_FR" />
+  <meta property="article:author" content="${author}" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${title}" />
+  <meta name="twitter:description" content="${description}" />
+  <meta name="twitter:image" content="${image}" />
+
+  <!-- SEO -->
+  <meta name="description" content="${description}" />
+
+  <!-- Redirect vers le vrai site apres 0.5s -->
+  <meta http-equiv="refresh" content="0;url=${siteUrl}/blog" />
+  <script>window.location.href = '${siteUrl}/blog';</script>
+</head>
+<body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc;">
+  <div style="text-align:center;max-width:500px;padding:40px;">
+    <img src="https://i.postimg.cc/5Y3Rg6zs/image-1.jpg" style="width:80px;height:80px;border-radius:50%;margin-bottom:20px;" />
+    <h1 style="color:#1e40af;font-size:1.5rem;margin-bottom:10px;">${title}</h1>
+    <p style="color:#64748b;margin-bottom:20px;">${description}</p>
+    <a href="${siteUrl}/blog" style="background:#1e40af;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">
+      Voir sur Bourse du Temps →
+    </a>
+  </div>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) {
+    console.error('[share/blog]', err);
+    res.redirect('https://boursedutemps.vercel.app/blog');
+  }
+});
+
+// --- SET ADMIN ROLE (one-time setup) --------------------------------------
 app.post('/api/make-admin', async (req, res) => {
   const { email, secret } = req.body;
   if (secret !== 'BourseAdmin2026') return sendError(res, 'Non autorisé', 403);
@@ -481,7 +561,9 @@ app.post('/api/make-admin', async (req, res) => {
     const r = await query("UPDATE users SET role = 'admin' WHERE email = $1 RETURNING uid, email, role", [email]);
     if (!r.rows.length) return sendError(res, 'Utilisateur non trouvé', 404);
     res.json({ success: true, user: r.rows[0] });
-  } catch (err) { sendError(res, err.message); }
+  } catch (err) {
+    sendError(res, err.message);
+  }
 });
 
 // --- 404 + ERROR ----------------------------------------------------------

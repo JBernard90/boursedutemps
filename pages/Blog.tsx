@@ -146,13 +146,15 @@ const Blog: React.FC<BlogProps> = ({ blogs, user, onUpdate, onAuthClick }) => {
   const handleShare = async (blog: BlogPost) => {
     const token = localStorage.getItem('token');
     const newShares = (blog.shares || 0) + 1;
+    const shareUrl = `https://boursedutemps.vercel.app/share/blog/${blog.id}`;
+    const shareText = blog.content.substring(0, 150) + '...';
     if (navigator.share) {
       try {
-        await navigator.share({ title: blog.title, text: blog.content, url: window.location.href });
+        await navigator.share({ title: blog.title, text: shareText, url: shareUrl });
       } catch (err) { console.error("Erreur de partage:", err); }
     } else {
-      navigator.clipboard.writeText(window.location.href);
-      alert("Lien copié dans le presse-papier !");
+      navigator.clipboard.writeText(shareUrl);
+      alert("Lien copié ! Partagez-le sur vos réseaux sociaux.");
     }
     await fetch('/api/blogs/' + blog.id, {
       method: 'PUT',
