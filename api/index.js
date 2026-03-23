@@ -553,6 +553,114 @@ app.get('/share/blog/:id', async (req, res) => {
   }
 });
 
+
+// --- OPEN GRAPH SHARE - TESTIMONIALS --------------------------------------
+app.get('/share/testimonials/:id', async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM testimonials WHERE id = $1', [req.params.id]);
+    if (!r.rows.length) return res.redirect('https://boursedutemps.vercel.app/testimonials');
+    const t = r.rows[0];
+    const title = (t.title || 'Témoignage') + ' — Bourse du Temps';
+    const description = (t.content || '').replace(/<[^>]*>/g, '').substring(0, 200) + '...';
+    const author = t.author_name || 'Bourse du Temps';
+    const siteUrl = 'https://boursedutemps.vercel.app';
+    let image = 'https://i.postimg.cc/5Y3Rg6zs/image-1.jpg';
+    try {
+      const media = typeof t.media === 'string' ? JSON.parse(t.media) : (t.media || []);
+      const firstImage = media.find(m => m.type === 'image');
+      if (firstImage && firstImage.url) image = firstImage.url;
+    } catch(e) {}
+    const stars = '★'.repeat(t.rating || 5) + '☆'.repeat(5 - (t.rating || 5));
+    const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>${title}</title>
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Bourse du Temps" />
+  <meta property="og:url" content="${siteUrl}/share/testimonials/${t.id}" />
+  <meta property="og:title" content="${title}" />
+  <meta property="og:description" content="${stars} ${description}" />
+  <meta property="og:image" content="${image}" />
+  <meta property="og:locale" content="fr_FR" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${title}" />
+  <meta name="twitter:description" content="${stars} ${description}" />
+  <meta name="twitter:image" content="${image}" />
+  <meta http-equiv="refresh" content="0;url=${siteUrl}/testimonials" />
+  <script>window.location.href = '${siteUrl}/testimonials';</script>
+</head>
+<body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc;">
+  <div style="text-align:center;max-width:500px;padding:40px;">
+    <div style="font-size:2rem;margin-bottom:12px;">${stars}</div>
+    <h1 style="color:#1e40af;font-size:1.5rem;margin-bottom:10px;">${t.title || 'Témoignage'}</h1>
+    <p style="color:#64748b;margin-bottom:8px;font-style:italic;">Par ${author}</p>
+    <p style="color:#64748b;margin-bottom:20px;">${description}</p>
+    <a href="${siteUrl}/testimonials" style="background:#1e40af;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Voir sur Bourse du Temps →</a>
+  </div>
+</body>
+</html>`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) {
+    console.error('[share/testimonials]', err);
+    res.redirect('https://boursedutemps.vercel.app/testimonials');
+  }
+});
+
+// --- OPEN GRAPH SHARE - FORUM ---------------------------------------------
+app.get('/share/forum/:id', async (req, res) => {
+  try {
+    const r = await query('SELECT * FROM forum_topics WHERE id = $1', [req.params.id]);
+    if (!r.rows.length) return res.redirect('https://boursedutemps.vercel.app/forum');
+    const t = r.rows[0];
+    const title = (t.title || 'Discussion') + ' — Bourse du Temps';
+    const description = (t.content || t.message || '').replace(/<[^>]*>/g, '').substring(0, 200) + '...';
+    const author = t.author_name || 'Bourse du Temps';
+    const siteUrl = 'https://boursedutemps.vercel.app';
+    let image = 'https://i.postimg.cc/5Y3Rg6zs/image-1.jpg';
+    try {
+      const media = typeof t.media === 'string' ? JSON.parse(t.media) : (t.media || []);
+      const firstImage = media.find(m => m.type === 'image');
+      if (firstImage && firstImage.url) image = firstImage.url;
+    } catch(e) {}
+    const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>${title}</title>
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="Bourse du Temps" />
+  <meta property="og:url" content="${siteUrl}/share/forum/${t.id}" />
+  <meta property="og:title" content="${title}" />
+  <meta property="og:description" content="${description}" />
+  <meta property="og:image" content="${image}" />
+  <meta property="og:locale" content="fr_FR" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="${title}" />
+  <meta name="twitter:description" content="${description}" />
+  <meta name="twitter:image" content="${image}" />
+  <meta http-equiv="refresh" content="0;url=${siteUrl}/forum" />
+  <script>window.location.href = '${siteUrl}/forum';</script>
+</head>
+<body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc;">
+  <div style="text-align:center;max-width:500px;padding:40px;">
+    <div style="font-size:2rem;margin-bottom:12px;">💬</div>
+    <h1 style="color:#1e40af;font-size:1.5rem;margin-bottom:10px;">${t.title || 'Discussion'}</h1>
+    <p style="color:#64748b;margin-bottom:8px;">Par ${author}</p>
+    <p style="color:#64748b;margin-bottom:20px;">${description}</p>
+    <a href="${siteUrl}/forum" style="background:#1e40af;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">Voir sur Bourse du Temps →</a>
+  </div>
+</body>
+</html>`;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) {
+    console.error('[share/forum]', err);
+    res.redirect('https://boursedutemps.vercel.app/forum');
+  }
+});
+
 // --- SET ADMIN ROLE (one-time setup) --------------------------------------
 app.post('/api/make-admin', async (req, res) => {
   const { email, secret } = req.body;
