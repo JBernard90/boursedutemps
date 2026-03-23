@@ -15,6 +15,7 @@ const Blog = lazy(() => import('./pages/Blog'));
 const Testimonials = lazy(() => import('./pages/Testimonials'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Moderation = lazy(() => import('./pages/Moderation'));
+const MessagesPage = lazy(() => import('./pages/Messages'));
 import AuthModal from './components/AuthModal';
 
 const ADMIN_EMAIL = 'jeanbernardpierrelouis@gmail.com';
@@ -391,7 +392,7 @@ const App: React.FC = () => {
   // Detect initial page from URL (for social share redirects)
   const getInitialPage = (): Page => {
     const path = window.location.pathname.replace('/', '').split('/')[0];
-    const validPages: Page[] = ['home', 'about', 'services', 'requests', 'members', 'forum', 'blog', 'testimonials', 'profile', 'moderation'];
+    const validPages: Page[] = ['home', 'about', 'services', 'requests', 'members', 'forum', 'blog', 'testimonials', 'profile', 'moderation', 'messages'];
     return validPages.includes(path as Page) ? (path as Page) || 'home' : 'home';
   };
 
@@ -425,6 +426,27 @@ const App: React.FC = () => {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [visitorCount, setVisitorCount] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+
+  // Fetch unread messages count
+  React.useEffect(() => {
+    const fetchUnread = async () => {
+      if (!localStorage.getItem('token')) return;
+      try {
+        const res = await fetch('/api/messages/unread', {
+          headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const total = Object.values(data).reduce((a: any, b: any) => a + b, 0) as number;
+          setUnreadMessages(total);
+        }
+      } catch(e) {}
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const stats = {
     totalVisitors: visitorCount,
@@ -715,6 +737,7 @@ const App: React.FC = () => {
       case 'profile-view': 
         const target = users.find(u => u.uid === viewingUserId);
         return target ? <Profile user={target} currentUser={user} allUsers={users} transactions={transactions} connections={connections} messages={messages} onUpdate={() => {}} onSendConnection={(uid) => { if (!user) { setShowAuthModal('login'); return; } handleSendConnection(uid); }} onUpdateConnection={handleUpdateConnection} onUpdateMessages={setMessages} readOnly /> : <Members users={users} onViewProfile={(uid) => { setViewingUserId(uid); setCurrentPage('profile-view'); }} />;
+      case 'messages': return user ? <MessagesPage user={user} users={users} /> : <Home navigate={setCurrentPage} blogs={blogs} testimonials={testimonials} stats={stats} />;
       case 'moderation': return <Moderation users={users} onUpdateUsers={setUsers} services={services} onUpdateServices={setServices} requests={requests} onUpdateRequests={setRequests} currentUser={user!} />;
       default: return <Home navigate={setCurrentPage} blogs={blogs} testimonials={testimonials} stats={stats} />;
     }
@@ -722,7 +745,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
-      <Navbar currentPage={currentPage} user={user} onNavigate={setCurrentPage} onLogin={() => setShowAuthModal('login')} onSignup={() => setShowAuthModal('signup')} onLogout={() => setUser(null)} />
+      <Navbar currentPage={currentPage} user={user} unreadMessages={unreadMessages} onNavigate={setCurrentPage} onLogin={() => setShowAuthModal('login')} onSignup={() => setShowAuthModal('signup')} onLogout={() => setUser(null)} />
       <main className="flex-grow pt-16">
         <Suspense fallback={
           <div className="flex items-center justify-center min-h-[60vh]">

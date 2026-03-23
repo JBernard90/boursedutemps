@@ -891,6 +891,81 @@ app.post('/api/notify/exchange', async (req, res) => {
   res.json({ success: true });
 });
 
+
+// --- MESSAGES -------------------------------------------------------------
+
+// Envoyer un message
+app.post('/api/messages', authenticateToken, async (req, res) => {
+  const { receiverId, content, mediaUrl, mediaType, fileName, link } = req.body;
+  if (!receiverId) return sendError(res, 'Destinataire requis', 400);
+  try {
+    const r = await query(
+      'INSERT INTO messages (sender_id, receiver_id, content, media_url, media_type, file_name, link) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+      [req.user.uid, receiverId, content||null, mediaUrl||null, mediaType||null, fileName||null, link||null]
+    );
+    res.status(201).json(toCamel(r.rows[0]));
+  } catch(e) { sendError(res, e.message); }
+});
+
+// Récupérer la conversation avec un membre
+app.get('/api/messages/:partnerId', authenticateToken, async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT * FROM messages 
+       WHERE (sender_id = $1 AND receiver_id = $2) 
+          OR (sender_id = $2 AND receiver_id = $1)
+       ORDER BY created_at ASC`,
+      [req.user.uid, req.params.partnerId]
+    );
+    // Marquer les messages reçus comme lus
+    await query(
+      'UPDATE messages SET read = true WHERE receiver_id = $1 AND sender_id = $2 AND read = false',
+      [req.user.uid, req.params.partnerId]
+    );
+    res.json(toCamel(r.rows));
+  } catch(e) { sendError(res, e.message); }
+});
+
+// Compter les messages non lus par expéditeur
+app.get('/api/messages/unread', authenticateToken, async (req, res) => {
+  try {
+    const r = await query(
+      'SELECT sender_id, COUNT(*) as count FROM messages WHERE receiver_id = $1 AND read = false GROUP BY sender_id',
+      [req.user.uid]
+    );
+    const counts = {};
+    r.rows.forEach(row => { counts[row.sender_id] = parseInt(row.count); });
+    res.json(counts);
+  } catch(e) { sendError(res, e.message); }
+});
+
+// --- NOTIFY: NEW MESSAGE --------------------------------------------------
+app.post('/api/notify/message', async (req, res) => {
+  const { receiverEmail, receiverName, senderName } = req.body;
+  if (!receiverEmail) return res.json({ success: false });
+  const html = `<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+    <div style="background:#1e40af;padding:24px;text-align:center;">
+      <img src="https://i.postimg.cc/5Y3Rg6zs/image-1.jpg" style="width:60px;height:60px;border-radius:50%;margin-bottom:12px;" />
+      <h1 style="color:white;margin:0;font-size:20px;">Bourse du Temps</h1>
+    </div>
+    <div style="padding:32px;">
+      <h2 style="color:#1e293b;margin-top:0;">Nouveau message 💬</h2>
+      <p style="color:#475569;">Bonjour <strong>${receiverName}</strong>,</p>
+      <p style="color:#475569;"><strong>${senderName}</strong> vous a envoyé un message privé.</p>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="https://boursedutemps.vercel.app/messages" style="background:#1e40af;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold;">
+          Voir le message →
+        </a>
+      </div>
+    </div>
+    <div style="background:#f8fafc;padding:16px;text-align:center;border-top:1px solid #e2e8f0;">
+      <p style="color:#94a3b8;font-size:12px;margin:0;">Université Senghor — <a href="https://boursedutemps.vercel.app" style="color:#1e40af;">boursedutemps.vercel.app</a></p>
+    </div>
+  </div>`;
+  await sendNotificationEmail(receiverEmail, `Nouveau message de ${senderName}`, html);
+  res.json({ success: true });
+});
+
 // --- 404 + ERROR ----------------------------------------------------------
 app.use('/api/*', function(req, res) {
   res.status(404).json({ error: 'Route ' + req.originalUrl + ' introuvable', success: false });
