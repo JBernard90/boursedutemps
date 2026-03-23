@@ -388,7 +388,14 @@ const INITIAL_BLOGS: BlogPost[] = [
 const INITIAL_TESTIMONIALS: Testimonial[] = [];
 
 const App: React.FC = () => {
-  const [currentPage, setCurrentPageState] = useState<Page>('home');
+  // Detect initial page from URL (for social share redirects)
+  const getInitialPage = (): Page => {
+    const path = window.location.pathname.replace('/', '').split('/')[0];
+    const validPages: Page[] = ['home', 'about', 'services', 'requests', 'members', 'forum', 'blog', 'testimonials', 'profile', 'moderation'];
+    return validPages.includes(path as Page) ? (path as Page) || 'home' : 'home';
+  };
+
+  const [currentPage, setCurrentPageState] = useState<Page>(getInitialPage);
 
   const setCurrentPage = (page: Page, extra?: any) => {
     window.history.pushState({ page, ...extra }, '', '/' + (page === 'home' ? '' : page));
@@ -401,7 +408,9 @@ const App: React.FC = () => {
       if (e.state?.viewingUserId) setViewingUserId(e.state.viewingUserId);
       setCurrentPageState(page);
     };
-    window.history.replaceState({ page: 'home' }, '', '/');
+    // Only replace state if we're on home, preserve other pages
+    const initialPage = getInitialPage();
+    window.history.replaceState({ page: initialPage }, '', initialPage === 'home' ? '/' : '/' + initialPage);
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
