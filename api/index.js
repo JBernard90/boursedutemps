@@ -530,8 +530,8 @@ app.get('/share/blog/:id', async (req, res) => {
   <meta name="description" content="${description}" />
 
   <!-- Redirect vers le vrai site apres 0.5s -->
-  <meta http-equiv="refresh" content="0;url=${siteUrl}/blog" />
-  <script>window.location.href = '${siteUrl}/blog';</script>
+  <meta http-equiv="refresh" content="0;url=${siteUrl}/blog#blog-${blog.id}" />
+  <script>window.location.href = '${siteUrl}/blog#blog-${blog.id}';</script>
 </head>
 <body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc;">
   <div style="text-align:center;max-width:500px;padding:40px;">
@@ -587,8 +587,8 @@ app.get('/share/testimonials/:id', async (req, res) => {
   <meta name="twitter:title" content="${title}" />
   <meta name="twitter:description" content="${stars} ${description}" />
   <meta name="twitter:image" content="${image}" />
-  <meta http-equiv="refresh" content="0;url=${siteUrl}/testimonials" />
-  <script>window.location.href = '${siteUrl}/testimonials';</script>
+  <meta http-equiv="refresh" content="0;url=${siteUrl}/testimonials#testimonial-${t.id}" />
+  <script>window.location.href = '${siteUrl}/testimonials#testimonial-${t.id}';</script>
 </head>
 <body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc;">
   <div style="text-align:center;max-width:500px;padding:40px;">
@@ -640,8 +640,8 @@ app.get('/share/forum/:id', async (req, res) => {
   <meta name="twitter:title" content="${title}" />
   <meta name="twitter:description" content="${description}" />
   <meta name="twitter:image" content="${image}" />
-  <meta http-equiv="refresh" content="0;url=${siteUrl}/forum" />
-  <script>window.location.href = '${siteUrl}/forum';</script>
+  <meta http-equiv="refresh" content="0;url=${siteUrl}/forum#forum-${t.id}" />
+  <script>window.location.href = '${siteUrl}/forum#forum-${t.id}';</script>
 </head>
 <body style="font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f8fafc;">
   <div style="text-align:center;max-width:500px;padding:40px;">
@@ -659,6 +659,41 @@ app.get('/share/forum/:id', async (req, res) => {
     console.error('[share/forum]', err);
     res.redirect('https://boursedutemps.vercel.app/forum');
   }
+});
+
+
+
+// --- SITEMAP --------------------------------------------------------------
+app.get('/sitemap.xml', (req, res) => {
+  res.setHeader('Content-Type', 'application/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://boursedutemps.vercel.app/</loc><priority>1.0</priority></url>
+  <url><loc>https://boursedutemps.vercel.app/about</loc><priority>0.8</priority></url>
+  <url><loc>https://boursedutemps.vercel.app/services</loc><priority>0.9</priority></url>
+  <url><loc>https://boursedutemps.vercel.app/requests</loc><priority>0.9</priority></url>
+  <url><loc>https://boursedutemps.vercel.app/members</loc><priority>0.8</priority></url>
+  <url><loc>https://boursedutemps.vercel.app/blog</loc><priority>0.9</priority></url>
+  <url><loc>https://boursedutemps.vercel.app/forum</loc><priority>0.9</priority></url>
+  <url><loc>https://boursedutemps.vercel.app/testimonials</loc><priority>0.7</priority></url>
+</urlset>`);
+});
+
+// --- ROBOTS.TXT -----------------------------------------------------------
+app.get('/robots.txt', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(`User-agent: *
+Allow: /
+Disallow: /profile
+Disallow: /moderation
+Disallow: /api/
+Sitemap: https://boursedutemps.vercel.app/sitemap.xml`);
+});
+
+// --- GOOGLE SEARCH CONSOLE VERIFICATION ----------------------------------
+app.get('/google1801069cb5a6ae0c.html', (req, res) => {
+  res.setHeader('Content-Type', 'text/html');
+  res.send('google-site-verification: google1801069cb5a6ae0c.html');
 });
 
 // --- SET ADMIN ROLE (one-time setup) --------------------------------------

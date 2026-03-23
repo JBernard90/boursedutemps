@@ -5,9 +5,9 @@
     { "source": "/share/blog/:id", "destination": "/api/index.js" },
     { "source": "/share/testimonials/:id", "destination": "/api/index.js" },
     { "source": "/share/forum/:id", "destination": "/api/index.js" },
-    { "source": "/google1801069cb5a6ae0c.html", "destination": "/google1801069cb5a6ae0c.html" },
-    { "source": "/sitemap.xml", "destination": "/sitemap.xml" },
-    { "source": "/robots.txt", "destination": "/robots.txt" },
+    { "source": "/google1801069cb5a6ae0c.html", "destination": "/api/index.js" },
+    { "source": "/sitemap.xml", "destination": "/api/index.js" },
+    { "source": "/robots.txt", "destination": "/api/index.js" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
