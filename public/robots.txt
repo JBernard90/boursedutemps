@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+# Pages privées à ne pas indexer
+Disallow: /profile
+Disallow: /moderation
+Disallow: /api/
+
+# Sitemap
+Sitemap: https://boursedutemps.vercel.app/sitemap.xml

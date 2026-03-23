@@ -3,9 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bourse du Temps - Université Senghor</title>
 
-    <!-- Open Graph général -->
+    <!-- Titre principal -->
+    <title>Bourse du Temps — Échangez vos talents | Université Senghor</title>
+
+    <!-- SEO de base -->
+    <meta name="description" content="La Bourse du Temps est une plateforme d'échange de compétences entre étudiants de l'Université Senghor d'Alexandrie. Proposez vos talents, trouvez de l'aide, grandissez ensemble sans argent." />
+    <meta name="keywords" content="bourse du temps, échange compétences, université senghor, alexandrie, entraide étudiants, time bank, troc savoir, communauté étudiante" />
+    <meta name="author" content="Jean Bernard Pierre Louis" />
+    <meta name="robots" content="index, follow" />
+    <meta name="language" content="French" />
+    <meta name="revisit-after" content="7 days" />
+    <link rel="canonical" href="https://boursedutemps.vercel.app/" />
+
+    <!-- Open Graph (Facebook, WhatsApp) -->
     <meta property="og:site_name" content="Bourse du Temps" />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://boursedutemps.vercel.app" />
@@ -14,6 +25,7 @@
     <meta property="og:image" content="https://i.postimg.cc/5Y3Rg6zs/image-1.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Logo Bourse du Temps" />
     <meta property="og:locale" content="fr_FR" />
 
     <!-- Twitter Card -->
@@ -22,10 +34,33 @@
     <meta name="twitter:description" content="Plateforme d'échange de compétences entre étudiants de l'Université Senghor." />
     <meta name="twitter:image" content="https://i.postimg.cc/5Y3Rg6zs/image-1.jpg" />
 
-    <!-- SEO -->
-    <meta name="description" content="Plateforme d'échange de compétences entre étudiants de l'Université Senghor. Proposez vos talents, trouvez de l'aide, grandissez ensemble." />
-    <meta name="keywords" content="bourse du temps, échange, compétences, université senghor, entraide, étudiants" />
+    <!-- Données structurées JSON-LD (Google) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Bourse du Temps",
+      "url": "https://boursedutemps.vercel.app",
+      "logo": "https://i.postimg.cc/5Y3Rg6zs/image-1.jpg",
+      "description": "Plateforme d'échange de compétences entre étudiants de l'Université Senghor d'Alexandrie.",
+      "foundingLocation": {
+        "@type": "Place",
+        "name": "Université Senghor, Alexandrie, Égypte"
+      },
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "email": "jean.pierre-louis.2025@etu-usenghor.org",
+        "contactType": "customer support"
+      },
+      "sameAs": []
+    }
+    </script>
 
+    <!-- Favicon -->
+    <link rel="icon" type="image/jpeg" href="https://i.postimg.cc/5Y3Rg6zs/image-1.jpg" />
+    <link rel="apple-touch-icon" href="https://i.postimg.cc/5Y3Rg6zs/image-1.jpg" />
+
+    <!-- Polices -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">

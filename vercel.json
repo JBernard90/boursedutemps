@@ -5,6 +5,8 @@
     { "source": "/share/blog/:id", "destination": "/api/index.js" },
     { "source": "/share/testimonials/:id", "destination": "/api/index.js" },
     { "source": "/share/forum/:id", "destination": "/api/index.js" },
+    { "source": "/sitemap.xml", "destination": "/sitemap.xml" },
+    { "source": "/robots.txt", "destination": "/robots.txt" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
