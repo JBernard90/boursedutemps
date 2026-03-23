@@ -70,7 +70,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentPage, user, unreadMessages = 0, 
                     : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50'
                 }`}
               >
-                💬 Messages
+                Messages
                 {unreadMessages > 0 && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
                     {unreadMessages}
@@ -158,7 +158,7 @@ const Navbar: React.FC<NavbarProps> = ({ currentPage, user, unreadMessages = 0, 
                   onClick={() => { onNavigate('messages'); setIsOpen(false); }}
                   className="w-full bg-blue-50 text-blue-600 py-3 rounded-xl font-bold flex items-center justify-center gap-2"
                 >
-                  💬 Messages
+                  Messages
                   {unreadMessages > 0 && <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unreadMessages}</span>}
                 </button>
                 <button 
