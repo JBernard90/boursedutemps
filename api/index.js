@@ -1074,63 +1074,18 @@ app.get('/api/admin/stats', authenticateToken, async (req, res) => {
 });
 
 
-// --- DAILY.CO LIVE --------------------------------------------------------
-const https = require('https');
-
-const dailyRequest = (method, path, body, apiKey) => {
-  return new Promise((resolve, reject) => {
-    const data = body ? JSON.stringify(body) : null;
-    const options = {
-      hostname: 'api.daily.co',
-      path: '/v1' + path,
-      method: method,
-      headers: {
-        'Authorization': 'Bearer ' + apiKey,
-        'Content-Type': 'application/json',
-        ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {})
-      }
-    };
-    const req = https.request(options, (res) => {
-      let responseData = '';
-      res.on('data', (chunk) => { responseData += chunk; });
-      res.on('end', () => {
-        try { resolve(JSON.parse(responseData)); }
-        catch(e) { resolve(responseData); }
-      });
-    });
-    req.on('error', reject);
-    if (data) req.write(data);
-    req.end();
-  });
-};
-
+// --- JITSI MEET LIVE (100% gratuit, sans API key) ------------------------
 app.post('/api/live/create', authenticateToken, async (req, res) => {
   const { title } = req.body;
-  const apiKey = process.env.DAILY_API_KEY;
-  if (!apiKey) return sendError(res, 'Daily API key manquante', 500);
   try {
-    const roomName = 'bdt-live-' + Date.now();
-    const room = await dailyRequest('POST', '/rooms', {
-      name: roomName,
-      properties: {
-        exp: Math.floor(Date.now() / 1000) + 7200,
-        max_participants: 50,
-        enable_chat: true,
-        enable_screenshare: true,
-        start_video_off: false,
-        start_audio_off: false,
-      }
-    }, apiKey);
-
-    if (!room.url) {
-      console.error('[live/create] Daily response:', JSON.stringify(room));
-      return sendError(res, 'Erreur création salle: ' + JSON.stringify(room), 500);
-    }
+    // Generer un nom de salle unique
+    const roomName = 'BourseduTemps-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    const jitsiUrl = 'https://meet.jit.si/' + roomName;
 
     res.json({
-      url: room.url,
+      url: jitsiUrl,
       name: title || 'Live Bourse du Temps',
-      roomName: room.name
+      roomName: roomName
     });
   } catch(e) {
     console.error('[live/create]', e);
@@ -1139,13 +1094,7 @@ app.post('/api/live/create', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/live/rooms', async (req, res) => {
-  const apiKey = process.env.DAILY_API_KEY;
-  if (!apiKey) return res.json([]);
-  try {
-    const data = await dailyRequest('GET', '/rooms?limit=10', null, apiKey);
-    const rooms = (data.data || []).filter(r => r.config && r.config.exp > Date.now() / 1000);
-    res.json(rooms.map(r => ({ name: r.name, url: r.url })));
-  } catch(e) { res.json([]); }
+  res.json([]);
 });
 
 // --- 404 + ERROR ----------------------------------------------------------
