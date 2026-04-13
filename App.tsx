@@ -108,7 +108,7 @@ CONDITIONS GÉNÉRALES D’UTILISATION (CGU)
 Les présentes CGU encadrent l’utilisation du site Bourse du Temps.
 
 2. Accès au site
-Le site est accessible gratuitement à tout (e) auditeur (trice) du campus de l'Université Senghor à Alexandrie.
+Le site est accessible gratuitement à toutes les personnes, membres de nos organisations partenaires .
 
 3. Services proposés
 Le site propose :
@@ -141,7 +141,7 @@ Les CGU peuvent être modifiées à tout moment.
 La version en vigueur est celle affichée sur le site.
 
 9. Droit applicable
-Les présentes CGU sont soumises au droit égyptien et aux règlements de l'Université Senghor à Alexandrie.`;
+Les présentes CGU sont soumises au droit des pays concernés et aux règlements de nos organisations partenaires.`;
 
 const TERMS_TEXT = `LOI DE CONDITIONS D’ÉCHANGE – BOURSE DU TEMPS
 1. Objet de la Loi
